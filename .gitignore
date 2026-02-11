@@ -109,3 +109,16 @@ debug.log
 9.1922
 *.tmp.js
 *.temp.js
+
+# Development/Deployment Guides (keep locally, don't commit)
+DEPLOYMENT_CHECKLIST.md
+GIT_PUSH_GUIDE.md
+CRONJOB_SETUP.md
+RENDER_DEPLOYMENT_GUIDE.md
+FIREBASE_BASE64_GUIDE.md
+FIREBASE_WARMUP.md
+STARTUP_SPEED_TESTING.md
+ML_RECOMMENDATIONS_API.md
+WATCH_PROVIDERS_TESTING.md
+# Keep README.md - it should be committed
+!README.md
