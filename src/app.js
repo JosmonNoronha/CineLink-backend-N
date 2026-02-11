@@ -37,8 +37,12 @@ async function createApp() {
 
   // Initialize Redis (optional - app works without it)
   try {
-    await initializeRedis();
-    logger.info('Redis initialized successfully');
+    const redisClient = await initializeRedis();
+    if (redisClient) {
+      logger.info('Redis initialized successfully');
+    } else {
+      logger.info('Redis disabled - app will run without caching');
+    }
   } catch (error) {
     logger.warn('Redis initialization failed, continuing without Redis', { error: error.message });
   }

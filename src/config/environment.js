@@ -20,7 +20,7 @@ const schema = Joi.object({
   FIREBASE_CLIENT_EMAIL: Joi.string().allow(''),
   FIREBASE_PRIVATE_KEY: Joi.string().allow(''),
 
-  REDIS_URL: Joi.string().uri().allow(''),
+  REDIS_URL: Joi.string().allow('').optional(),
 
   RATE_LIMIT_WINDOW_MS: Joi.number().default(60_000),
   RATE_LIMIT_MAX: Joi.number().default(120),
