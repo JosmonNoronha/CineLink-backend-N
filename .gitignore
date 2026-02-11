@@ -8,7 +8,7 @@ jspm_packages/
 !.env.example
 !.env.template
 
-# Firebase Service Account (CRITICAL - Never commit!)
+# Firebase Service Account 
 *firebase*.json
 *serviceAccount*.json
 *service-account*.json
@@ -110,7 +110,6 @@ debug.log
 *.tmp.js
 *.temp.js
 
-# Development/Deployment Guides (keep locally, don't commit)
 DEPLOYMENT_CHECKLIST.md
 GIT_PUSH_GUIDE.md
 CRONJOB_SETUP.md
@@ -120,5 +119,4 @@ FIREBASE_WARMUP.md
 STARTUP_SPEED_TESTING.md
 ML_RECOMMENDATIONS_API.md
 WATCH_PROVIDERS_TESTING.md
-# Keep README.md - it should be committed
 !README.md
