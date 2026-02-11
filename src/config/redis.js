@@ -10,17 +10,30 @@ async function initializeRedis() {
     logger.info('Redis URL not configured, skipping Redis initialization');
     return null;
   }
-  
+
   if (redisClient) return redisClient;
 
   try {
-    redisClient = createClient({ url: env.REDIS_URL });
-    
+    // Trim and validate URL format
+    const redisUrl = env.REDIS_URL.trim();
+
+    // Basic validation
+    if (!redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
+      logger.error('Redis URL must start with redis:// or rediss://');
+      return null;
+    }
+
+    // Log sanitized URL (hide password)
+    const sanitizedUrl = redisUrl.replace(/:([^@]+)@/, ':****@');
+    logger.info(`Attempting Redis connection to: ${sanitizedUrl}`);
+
+    redisClient = createClient({ url: redisUrl });
+
     redisClient.on('error', (err) => {
       redisReady = false;
       logger.warn(`Redis error: ${err.message}`);
     });
-    
+
     redisClient.on('ready', () => {
       redisReady = true;
       logger.info('Redis ready');
