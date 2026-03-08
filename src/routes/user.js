@@ -198,4 +198,33 @@ router.patch(
   }
 );
 
+router.get('/gamification', async (req, res) => {
+  const data = await profileService.getGamification(req.user.uid);
+  return ok(res, { gamification: data });
+});
+
+router.put(
+  '/gamification',
+  validate({
+    body: Joi.object({
+      xp: Joi.number().integer().min(0).optional(),
+      totalWatched: Joi.number().integer().min(0).optional(),
+      listsCreated: Joi.number().integer().min(0).optional(),
+      listsCompleted: Joi.number().integer().min(0).optional(),
+      currentStreak: Joi.number().integer().min(0).optional(),
+      bestStreak: Joi.number().integer().min(0).optional(),
+      lastWatchDate: Joi.string().allow(null).optional(),
+      unlockedAchievements: Joi.array().items(Joi.string()).optional(),
+      watchedMovieIds: Joi.array().items(Joi.string()).optional(),
+      completedListNames: Joi.array().items(Joi.string()).optional(),
+      dailyWatchCounts: Joi.object().pattern(Joi.string(), Joi.number()).optional(),
+      weeklyWatchCounts: Joi.object().pattern(Joi.string(), Joi.number()).optional(),
+    }),
+  }),
+  async (req, res) => {
+    await profileService.updateGamification(req.user.uid, req.body);
+    return ok(res, { synced: true });
+  }
+);
+
 module.exports = router;
