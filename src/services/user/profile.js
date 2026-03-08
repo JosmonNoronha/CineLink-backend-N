@@ -61,4 +61,25 @@ async function updateSubscriptions(uid, subscriptions) {
   return snap.data();
 }
 
-module.exports = { getProfile, upsertProfile, getSubscriptions, updateSubscriptions };
+async function getGamification(uid) {
+  const db = getFirestore();
+  const snap = await db.collection('users').doc(uid).get();
+  if (!snap.exists || !snap.data().gamification) return null;
+  return snap.data().gamification;
+}
+
+async function updateGamification(uid, data) {
+  const db = getFirestore();
+  // Strip any server-only fields that shouldn't be stored as-is
+  const { syncedAt: _ignored, ...cleanData } = data;
+  await db.collection('users').doc(uid).set(
+    {
+      gamification: { ...cleanData, syncedAt: admin.firestore.FieldValue.serverTimestamp() },
+      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+  return true;
+}
+
+module.exports = { getProfile, upsertProfile, getSubscriptions, updateSubscriptions, getGamification, updateGamification };
