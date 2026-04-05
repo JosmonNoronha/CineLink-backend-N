@@ -4,7 +4,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const Sentry = require('@sentry/node');
-const statusMonitor = require('express-status-monitor');
 
 const { env } = require('./config/environment');
 const { requestLogger } = require('./middleware/logger');
@@ -17,19 +16,27 @@ const { initializeFirebase } = require('./config/firebase');
 const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
 
+function shouldEnableStatusMonitor() {
+  if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
+  if (env.NODE_ENV === 'test') return false;
+  return true;
+}
+
 async function createApp() {
   // Initialize Firebase Admin SDK immediately to avoid cold-start issues
   try {
     await initializeFirebase(); // Changed from getFirebaseApp() to async call
     logger.info('Firebase Admin SDK initialized successfully');
 
-    // Warm up JWT verification to pre-fetch Google's public keys
-    // This prevents 20+ second delays on first token verification
-    const { warmupJwtVerification, warmupFirestore } = require('./config/firebase');
-    await warmupJwtVerification();
+    if (env.NODE_ENV !== 'test') {
+      // Warm up JWT verification to pre-fetch Google's public keys
+      // This prevents 20+ second delays on first token verification
+      const { warmupJwtVerification, warmupFirestore } = require('./config/firebase');
+      await warmupJwtVerification();
 
-    // Warm up Firestore connection to prevent delays on first database query
-    await warmupFirestore();
+      // Warm up Firestore connection to prevent delays on first database query
+      await warmupFirestore();
+    }
   } catch (error) {
     logger.error('Failed to initialize Firebase Admin SDK:', error);
     throw error;
@@ -52,43 +59,46 @@ async function createApp() {
 
   const app = express();
 
-  // Status monitor dashboard
-  app.use(
-    statusMonitor({
-      title: 'CineLink API Status',
-      path: '/status-monitor',
-      spans: [
-        {
-          interval: 1, // Every second
-          retention: 60, // Keep 60 datapoints (1 minute)
+  // Status monitor dashboard (disabled in tests due response-header hook conflicts)
+  if (shouldEnableStatusMonitor()) {
+    const statusMonitor = require('express-status-monitor');
+    app.use(
+      statusMonitor({
+        title: 'CineLink API Status',
+        path: '/status-monitor',
+        spans: [
+          {
+            interval: 1, // Every second
+            retention: 60, // Keep 60 datapoints (1 minute)
+          },
+          {
+            interval: 5, // Every 5 seconds
+            retention: 60, // Keep 60 datapoints (5 minutes)
+          },
+          {
+            interval: 15, // Every 15 seconds
+            retention: 60, // Keep 60 datapoints (15 minutes)
+          },
+        ],
+        chartVisibility: {
+          cpu: true,
+          mem: true,
+          load: true,
+          responseTime: true,
+          rps: true,
+          statusCodes: true,
         },
-        {
-          interval: 5, // Every 5 seconds
-          retention: 60, // Keep 60 datapoints (5 minutes)
-        },
-        {
-          interval: 15, // Every 15 seconds
-          retention: 60, // Keep 60 datapoints (15 minutes)
-        },
-      ],
-      chartVisibility: {
-        cpu: true,
-        mem: true,
-        load: true,
-        responseTime: true,
-        rps: true,
-        statusCodes: true,
-      },
-      healthChecks: [
-        {
-          protocol: 'http',
-          host: 'localhost',
-          path: '/api/health',
-          port: env.PORT,
-        },
-      ],
-    })
-  );
+        healthChecks: [
+          {
+            protocol: 'http',
+            host: 'localhost',
+            path: '/api/health',
+            port: env.PORT,
+          },
+        ],
+      })
+    );
+  }
 
   if (env.SENTRY_DSN) {
     Sentry.init({

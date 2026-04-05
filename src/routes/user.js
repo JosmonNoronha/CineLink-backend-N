@@ -7,10 +7,19 @@ const { schemas } = require('../utils/validators');
 const profileService = require('../services/user/profile');
 const favoritesService = require('../services/user/favorites');
 const watchlistsService = require('../services/user/watchlists');
+const episodesService = require('../services/user/episodes');
 
 const router = Router();
 
 router.use(authMiddleware);
+router.use(async (req, _res, next) => {
+  await profileService.ensureProfile(req.user.uid, {
+    email: req.user.email,
+    name: req.user.name,
+    picture: req.user.picture,
+  });
+  next();
+});
 
 router.get('/profile', async (req, res) => {
   const data = await profileService.getProfile(req.user.uid);
@@ -224,6 +233,39 @@ router.put(
   async (req, res) => {
     await profileService.updateGamification(req.user.uid, req.body);
     return ok(res, { synced: true });
+  }
+);
+
+router.get(
+  '/watched/:contentId',
+  validate({
+    params: Joi.object({ contentId: Joi.string().trim().min(1).required() }),
+  }),
+  async (req, res) => {
+    const episodes = await episodesService.getWatchedEpisodes(req.user.uid, req.params.contentId);
+    return ok(res, { episodes });
+  }
+);
+
+router.patch(
+  '/watched/:contentId/episodes',
+  validate({
+    params: Joi.object({ contentId: Joi.string().trim().min(1).required() }),
+    body: Joi.object({
+      season: Joi.number().integer().min(0).required(),
+      episode: Joi.number().integer().min(1).required(),
+      watched: Joi.boolean().required(),
+    }),
+  }),
+  async (req, res) => {
+    const data = await episodesService.setEpisodeWatched(
+      req.user.uid,
+      req.params.contentId,
+      req.body.season,
+      req.body.episode,
+      req.body.watched
+    );
+    return ok(res, { episodes: data });
   }
 );
 

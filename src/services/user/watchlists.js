@@ -1,6 +1,7 @@
 const admin = require('firebase-admin');
 const { getFirestore } = require('../../config/firebase');
 const { AppError } = require('../../utils/errors');
+const { normalizeMediaItem, isSameMedia, parseLegacyImdbId } = require('./mediaIdentity');
 
 function watchlistsCollection(uid) {
   return getFirestore().collection('users').doc(uid).collection('watchlists');
@@ -17,7 +18,7 @@ async function listWatchlists(uid) {
       id: d.id,
       name: d.id,
       ...data,
-      movies: data.movies || data.items || [], // Support both field names
+      movies: (data.movies || data.items || []).map((movie) => normalizeMediaItem(movie)), // Support both field names
     });
   });
 
@@ -62,14 +63,19 @@ async function addItem(uid, name, item) {
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
   const current = snap.data();
-  const items = Array.isArray(current.movies) ? current.movies : [];
+  const items = (Array.isArray(current.movies) ? current.movies : []).map((entry) => normalizeMediaItem(entry));
+  const normalized = normalizeMediaItem(item);
 
-  if (items.some((i) => i.tmdb_id === item.tmdb_id && i.media_type === item.media_type)) {
+  if (!normalized.id.key) {
+    throw new AppError('Invalid media identity', 400, 'VALIDATION_ERROR');
+  }
+
+  if (items.some((i) => isSameMedia(i, normalized))) {
     return { added: false };
   }
 
   const newItem = {
-    ...item,
+    ...normalized,
     watched: false,
     addedAt: admin.firestore.Timestamp.now(), // Cannot use serverTimestamp() inside arrays
   };
@@ -90,19 +96,21 @@ async function addMovieLegacy(uid, name, movie) {
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
   const current = snap.data();
-  const items = Array.isArray(current.movies) ? current.movies : [];
+  const items = (Array.isArray(current.movies) ? current.movies : []).map((entry) => normalizeMediaItem(entry));
+  const normalized = normalizeMediaItem(movie);
 
-  if (items.some((i) => String(i.imdbID) === String(movie.imdbID))) {
+  if (!normalized.id.key) {
+    throw new AppError('Invalid media identity', 400, 'VALIDATION_ERROR');
+  }
+
+  if (items.some((i) => isSameMedia(i, normalized))) {
     return { added: false };
   }
 
   const newItem = {
-    imdbID: movie.imdbID,
-    title: movie.Title || null,
-    poster: movie.Poster || null,
+    ...normalized,
     watched: false,
     addedAt: admin.firestore.Timestamp.now(), // Cannot use serverTimestamp() inside arrays
-    metadata: movie,
   };
 
   await ref.set(
@@ -120,8 +128,14 @@ async function toggleWatchedLegacy(uid, name, imdbID) {
   const snap = await ref.get();
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
-  const items = Array.isArray(snap.data().movies) ? snap.data().movies : [];
-  const idx = items.findIndex((i) => String(i.imdbID) === String(imdbID));
+  const items = (Array.isArray(snap.data().movies) ? snap.data().movies : []).map((entry) => normalizeMediaItem(entry));
+  const target = normalizeMediaItem({ imdbID });
+  const parsed = parseLegacyImdbId(imdbID);
+  const idx = items.findIndex((i) => {
+    if (isSameMedia(i, target)) return true;
+    if (parsed.key && i.id && i.id.key === parsed.key) return true;
+    return String(i.imdbID) === String(imdbID);
+  });
   if (idx === -1) throw new AppError('Item not found in watchlist', 404, 'NOT_FOUND');
 
   const oldItem = items[idx];
@@ -148,7 +162,7 @@ async function removeItem(uid, name, tmdbId) {
   const snap = await ref.get();
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
-  const items = Array.isArray(snap.data().movies) ? snap.data().movies : [];
+  const items = (Array.isArray(snap.data().movies) ? snap.data().movies : []).map((entry) => normalizeMediaItem(entry));
   const nextItems = items.filter((i) => String(i.tmdb_id) !== String(tmdbId));
 
   await ref.set(
@@ -166,8 +180,14 @@ async function removeMovieLegacy(uid, name, imdbID) {
   const snap = await ref.get();
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
-  const items = Array.isArray(snap.data().movies) ? snap.data().movies : [];
-  const nextItems = items.filter((i) => String(i.imdbID) !== String(imdbID));
+  const items = (Array.isArray(snap.data().movies) ? snap.data().movies : []).map((entry) => normalizeMediaItem(entry));
+  const target = normalizeMediaItem({ imdbID });
+  const parsed = parseLegacyImdbId(imdbID);
+  const nextItems = items.filter((i) => {
+    if (isSameMedia(i, target)) return false;
+    if (parsed.key && i.id && i.id.key === parsed.key) return false;
+    return String(i.imdbID) !== String(imdbID);
+  });
 
   await ref.set(
     {
@@ -184,7 +204,7 @@ async function toggleWatched(uid, name, tmdbId) {
   const snap = await ref.get();
   if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
 
-  const items = Array.isArray(snap.data().movies) ? snap.data().movies : [];
+  const items = (Array.isArray(snap.data().movies) ? snap.data().movies : []).map((entry) => normalizeMediaItem(entry));
   const idx = items.findIndex((i) => String(i.tmdb_id) === String(tmdbId));
   if (idx === -1) throw new AppError('Item not found in watchlist', 404, 'NOT_FOUND');
 

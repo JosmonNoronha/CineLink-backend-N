@@ -8,6 +8,25 @@ const { Buffer } = require('buffer');
 const tokenCache = new Map();
 const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+function deriveAuthorizationContext(claims = {}) {
+  const roles = [];
+  if (claims.admin === true) roles.push('admin');
+  if (claims.moderator === true) roles.push('moderator');
+  if (!roles.length) roles.push('user');
+
+  const permissions = new Set(['user:read', 'user:write']);
+  if (roles.includes('moderator')) permissions.add('content:moderate');
+  if (roles.includes('admin')) {
+    permissions.add('content:moderate');
+    permissions.add('admin:all');
+  }
+
+  return {
+    roles,
+    permissions: Array.from(permissions),
+  };
+}
+
 function decodeJwtPayload(token) {
   try {
     const parts = String(token || '').split('.');
@@ -60,24 +79,30 @@ async function authMiddleware(req, _res, next) {
     // Check cache first to avoid slow Firebase verification
     const cached = getCachedToken(token);
     if (cached) {
+      const authz = deriveAuthorizationContext(cached);
       req.user = {
         uid: cached.uid,
         email: cached.email,
         name: cached.name,
         picture: cached.picture,
         claims: cached,
+        roles: authz.roles,
+        permissions: authz.permissions,
       };
       return next();
     }
 
     const decoded = await getAuth().verifyIdToken(token);
     cacheToken(token, decoded);
+    const authz = deriveAuthorizationContext(decoded);
     req.user = {
       uid: decoded.uid,
       email: decoded.email,
       name: decoded.name,
       picture: decoded.picture,
       claims: decoded,
+      roles: authz.roles,
+      permissions: authz.permissions,
     };
     next();
   } catch (err) {
@@ -139,12 +164,15 @@ async function optionalAuth(req, _res, next) {
     // Check cache first
     const cached = getCachedToken(token);
     if (cached) {
+      const authz = deriveAuthorizationContext(cached);
       req.user = {
         uid: cached.uid,
         email: cached.email,
         name: cached.name,
         picture: cached.picture,
         claims: cached,
+        roles: authz.roles,
+        permissions: authz.permissions,
       };
       return next();
     }
@@ -152,12 +180,15 @@ async function optionalAuth(req, _res, next) {
     // Verify token
     const decoded = await getAuth().verifyIdToken(token);
     cacheToken(token, decoded);
+    const authz = deriveAuthorizationContext(decoded);
     req.user = {
       uid: decoded.uid,
       email: decoded.email,
       name: decoded.name,
       picture: decoded.picture,
       claims: decoded,
+      roles: authz.roles,
+      permissions: authz.permissions,
     };
     next();
   } catch (err) {

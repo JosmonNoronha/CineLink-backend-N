@@ -1,28 +1,39 @@
 const admin = require('firebase-admin');
 const { getFirestore } = require('../../config/firebase');
 
-async function getProfile(uid) {
-  const db = getFirestore();
-  const ref = db.collection('users').doc(uid);
+function userDocRef(uid) {
+  return getFirestore().collection('users').doc(uid);
+}
+
+async function ensureProfile(uid, identity = {}) {
+  const ref = userDocRef(uid);
   const snap = await ref.get();
-  if (!snap.exists) {
-    // Create the user document if it doesn't exist
-    const newProfile = {
+  if (snap.exists) return snap.data();
+
+  const now = admin.firestore.FieldValue.serverTimestamp();
+  await ref.set(
+    {
       uid,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
-    await ref.set(newProfile, { merge: true });
-    // Fetch the document again to get server-generated timestamps
-    const newSnap = await ref.get();
-    return newSnap.data();
-  }
-  return snap.data();
+      identity: {
+        email: identity.email || null,
+        name: identity.name || null,
+        picture: identity.picture || null,
+      },
+      createdAt: now,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+  const created = await ref.get();
+  return created.data();
+}
+
+async function getProfile(uid) {
+  return ensureProfile(uid);
 }
 
 async function upsertProfile(uid, patch) {
-  const db = getFirestore();
-  const ref = db.collection('users').doc(uid);
+  const ref = userDocRef(uid);
   const now = admin.firestore.FieldValue.serverTimestamp();
   await ref.set(
     {
@@ -38,8 +49,7 @@ async function upsertProfile(uid, patch) {
 }
 
 async function getSubscriptions(uid) {
-  const db = getFirestore();
-  const ref = db.collection('users').doc(uid);
+  const ref = userDocRef(uid);
   const snap = await ref.get();
   if (!snap.exists || !snap.data().streamingSubscriptions) {
     return [];
@@ -48,8 +58,7 @@ async function getSubscriptions(uid) {
 }
 
 async function updateSubscriptions(uid, subscriptions) {
-  const db = getFirestore();
-  const ref = db.collection('users').doc(uid);
+  const ref = userDocRef(uid);
   await ref.set(
     {
       streamingSubscriptions: subscriptions,
@@ -62,15 +71,14 @@ async function updateSubscriptions(uid, subscriptions) {
 }
 
 async function getGamification(uid) {
-  const db = getFirestore();
-  const snap = await db.collection('users').doc(uid).get();
+  const snap = await userDocRef(uid).get();
   if (!snap.exists || !snap.data().gamification) return null;
   return snap.data().gamification;
 }
 
 async function updateGamification(uid, data) {
   const { syncedAt: _ignored, ...cleanData } = data;
-  const ref = db.collection('users').doc(uid);
+  const ref = userDocRef(uid);
   const snap = await ref.get();
   const existing = snap.exists ? (snap.data().gamification || {}) : {};
 
@@ -98,4 +106,12 @@ async function updateGamification(uid, data) {
   );
 }
 
-module.exports = { getProfile, upsertProfile, getSubscriptions, updateSubscriptions, getGamification, updateGamification };
+module.exports = {
+  ensureProfile,
+  getProfile,
+  upsertProfile,
+  getSubscriptions,
+  updateSubscriptions,
+  getGamification,
+  updateGamification,
+};
