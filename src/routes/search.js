@@ -7,6 +7,8 @@ const searchService = require('../services/tmdb/search');
 const { searchPeople, searchByGenreOmdbLike } = require('../services/tmdb/compat');
 const { searchByGenre } = require('../services/tmdb/genres');
 const { unifiedSearch } = require('../services/search/unified');
+const { analyticsService } = require('../services/analytics');
+const trendingService = require('../services/tmdb/trending');
 
 const router = Router();
 
@@ -23,6 +25,11 @@ const unifiedSearchSchema = Joi.object({
   cursor: Joi.string().allow('').optional(),
 });
 
+const suggestionQuerySchema = Joi.object({
+  query: Joi.string().trim().allow('').default(''),
+  limit: Joi.number().integer().min(1).max(20).default(8),
+});
+
 router.use(searchLimiter);
 
 router.post('/', validate({ body: unifiedSearchSchema }), async (req, res) => {
@@ -37,6 +44,33 @@ router.post('/', validate({ body: unifiedSearchSchema }), async (req, res) => {
   });
 
   return ok(res, data);
+});
+
+router.get('/suggestions', validate({ query: suggestionQuerySchema }), async (req, res) => {
+  const query = (req.query.query || '').trim().toLowerCase();
+  const limit = req.query.limit || 8;
+
+  const [popularSearches, trendingKeywords] = await Promise.all([
+    analyticsService.getPopularSearches(30),
+    trendingService.getTrendingSearchKeywords(),
+  ]);
+
+  const analyticsKeywords = (popularSearches || [])
+    .map((item) => item?.query)
+    .filter(Boolean);
+
+  const merged = [...analyticsKeywords, ...(trendingKeywords || [])];
+  const filtered = query
+    ? merged.filter((item) => item.toLowerCase().includes(query))
+    : merged;
+
+  const deduped = filtered.filter((item, index, arr) => arr.indexOf(item) === index);
+  const suggestions = deduped.slice(0, limit);
+
+  return ok(res, {
+    suggestions,
+    source: analyticsKeywords.length > 0 ? 'analytics+trending' : 'trending',
+  });
 });
 
 router.get('/multi', validate({ query: searchQuerySchema }), async (req, res) => {

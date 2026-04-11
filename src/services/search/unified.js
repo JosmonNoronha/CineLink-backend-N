@@ -1,5 +1,6 @@
 const { searchOmdbLike, searchPeople, searchByGenreOmdbLike } = require('../tmdb/compat');
 const { searchByGenre } = require('../tmdb/genres');
+const { AppError } = require('../../utils/errors');
 
 const GENRE_KEYWORDS_LIST = [
   'action',
@@ -55,10 +56,37 @@ function encodeCursor(payload) {
   return Buffer.from(JSON.stringify(payload)).toString('base64url');
 }
 
+function decodeCursor(cursor) {
+  try {
+    const decoded = JSON.parse(Buffer.from(String(cursor), 'base64url').toString('utf8'));
+    if (!decoded || typeof decoded !== 'object') return null;
+    return decoded;
+  } catch (_e) {
+    return null;
+  }
+}
+
 async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor }) {
   const normalizedQuery = normalizeQuery(query);
   void filters;
-  void cursor;
+
+  const decodedCursor =
+    typeof cursor === 'string' && cursor.trim().length > 0 ? decodeCursor(cursor) : null;
+
+  if (cursor && !decodedCursor) {
+    throw new AppError('Invalid cursor', 400, 'VALIDATION_ERROR');
+  }
+
+  if (
+    decodedCursor &&
+    (normalizeQuery(decodedCursor.query) !== normalizedQuery ||
+      (decodedCursor.type || 'all') !== (type || 'all'))
+  ) {
+    throw new AppError('Cursor does not match query context', 400, 'VALIDATION_ERROR');
+  }
+
+  const effectivePage = decodedCursor?.page || page;
+
   if (!normalizedQuery) {
     return {
       Search: [],
@@ -78,12 +106,12 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
     const genreResults = await searchByGenre({
       genre: normalizedQuery,
       type: normType,
-      page,
+      page: effectivePage,
     });
     const formatted = await searchByGenreOmdbLike({ genreResults });
     const totalResults = parseInt(formatted.totalResults, 10) || formatted.Search.length;
     const totalPages = genreResults.totalPages || Math.max(1, Math.ceil(totalResults / 20));
-    const hasMore = page < totalPages;
+    const hasMore = effectivePage < totalPages;
 
     return {
       ...formatted,
@@ -93,7 +121,9 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
         source: 'genre',
         totalResultsExact: totalResults,
         totalResultsEstimated: totalResults,
-        nextCursor: hasMore ? encodeCursor({ query: normalizedQuery, type, page: page + 1, source: 'genre' }) : null,
+        nextCursor: hasMore
+          ? encodeCursor({ query: normalizedQuery, type, page: effectivePage + 1, source: 'genre' })
+          : null,
         sources: {
           genre: {
             totalResults,
@@ -104,9 +134,9 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
     };
   }
 
-  const titlePromise = searchOmdbLike({ q: normalizedQuery, type: normType, page });
+  const titlePromise = searchOmdbLike({ q: normalizedQuery, type: normType, page: effectivePage });
   const personPromise = shouldRunPersonSearch(normalizedQuery)
-    ? searchPeople({ q: normalizedQuery, page })
+    ? searchPeople({ q: normalizedQuery, page: effectivePage })
     : Promise.resolve({ results: [], totalResults: 0, totalPages: 0, peopleTotalResults: 0 });
 
   const [titleData, personData] = await Promise.all([titlePromise, personPromise]);
@@ -135,9 +165,9 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
   const titleTotalResults = parseInt(titleData.totalResults || '0', 10) || 0;
   const titleTotalPages = titleData.totalPages || Math.max(1, Math.ceil(titleTotalResults / 20));
   const personTotalResults = parseInt(personData.totalResults || '0', 10) || 0;
-  const personTotalPages = personData.totalPages || (personTotalResults > 0 ? page : 0);
+  const personTotalPages = personData.totalPages || (personTotalResults > 0 ? effectivePage : 0);
 
-  const hasMore = Math.max(titleTotalPages, personTotalPages) > page;
+  const hasMore = Math.max(titleTotalPages, personTotalPages) > effectivePage;
   const totalResultsEstimated = Math.max(
     titleTotalResults + personTotalResults,
     mergedResults.length,
@@ -154,7 +184,12 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
       totalResultsExact: null,
       totalResultsEstimated,
       nextCursor: hasMore
-        ? encodeCursor({ query: normalizedQuery, type, page: page + 1, source: personData.results.length > 0 ? 'blended' : 'title' })
+        ? encodeCursor({
+            query: normalizedQuery,
+            type,
+            page: effectivePage + 1,
+            source: personData.results.length > 0 ? 'blended' : 'title',
+          })
         : null,
       sources: {
         title: {
