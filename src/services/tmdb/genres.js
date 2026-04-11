@@ -67,12 +67,14 @@ async function searchByGenre({ genre, type, page = 1 }) {
   // Check for genre keywords
   const genreId = GENRE_KEYWORDS[genreLower];
   if (!genreId) {
-    return { results: [], totalResults: 0 };
+    return { results: [], totalResults: 0, totalPages: 0, page };
   }
 
   // Search movies or TV shows with this genre
   const mediaType = type === 'series' ? 'tv' : type === 'movie' ? 'movie' : null;
   const results = [];
+  let totalResults = 0;
+  let totalPages = 0;
 
   if (!mediaType || mediaType === 'movie') {
     const movieData = await tmdbGet('/discover/movie', {
@@ -81,6 +83,8 @@ async function searchByGenre({ genre, type, page = 1 }) {
       page,
     });
     results.push(...(movieData.results || []));
+    totalResults += movieData.total_results || 0;
+    totalPages = Math.max(totalPages, movieData.total_pages || 0);
   }
 
   if (!mediaType || mediaType === 'tv') {
@@ -90,11 +94,15 @@ async function searchByGenre({ genre, type, page = 1 }) {
       page,
     });
     results.push(...(tvData.results || []));
+    totalResults += tvData.total_results || 0;
+    totalPages = Math.max(totalPages, tvData.total_pages || 0);
   }
 
   return {
     results: results.slice(0, 20),
-    totalResults: results.length,
+    totalResults,
+    totalPages,
+    page,
   };
 }
 
@@ -102,6 +110,8 @@ async function searchBySpecialKeyword(keyword, type, page) {
   const config = SPECIAL_KEYWORDS[keyword];
   const mediaType = type === 'series' ? 'tv' : type === 'movie' ? 'movie' : null;
   const results = [];
+  let totalResults = 0;
+  let totalPages = 0;
 
   if (!mediaType || mediaType === 'movie') {
     const params = {
@@ -114,6 +124,8 @@ async function searchBySpecialKeyword(keyword, type, page) {
 
     const movieData = await tmdbGet('/discover/movie', params);
     results.push(...(movieData.results || []));
+    totalResults += movieData.total_results || 0;
+    totalPages = Math.max(totalPages, movieData.total_pages || 0);
   }
 
   if (!mediaType || mediaType === 'tv') {
@@ -127,11 +139,15 @@ async function searchBySpecialKeyword(keyword, type, page) {
 
     const tvData = await tmdbGet('/discover/tv', params);
     results.push(...(tvData.results || []));
+    totalResults += tvData.total_results || 0;
+    totalPages = Math.max(totalPages, tvData.total_pages || 0);
   }
 
   return {
     results: results.slice(0, 20),
-    totalResults: results.length,
+    totalResults,
+    totalPages,
+    page,
   };
 }
 

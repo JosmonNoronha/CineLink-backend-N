@@ -6,6 +6,7 @@ const { searchLimiter } = require('../middleware/rateLimiter');
 const searchService = require('../services/tmdb/search');
 const { searchPeople, searchByGenreOmdbLike } = require('../services/tmdb/compat');
 const { searchByGenre } = require('../services/tmdb/genres');
+const { unifiedSearch } = require('../services/search/unified');
 
 const router = Router();
 
@@ -14,7 +15,29 @@ const searchQuerySchema = Joi.object({
   page: Joi.number().integer().min(1).default(1),
 });
 
+const unifiedSearchSchema = Joi.object({
+  query: Joi.string().trim().min(1).max(200).required(),
+  type: Joi.string().valid('movie', 'series', 'episode', 'all').default('all'),
+  page: Joi.number().integer().min(1).default(1),
+  filters: Joi.object().unknown(true).default({}),
+  cursor: Joi.string().allow('').optional(),
+});
+
 router.use(searchLimiter);
+
+router.post('/', validate({ body: unifiedSearchSchema }), async (req, res) => {
+  await req.analytics.trackSearch(req.body.query);
+
+  const data = await unifiedSearch({
+    query: req.body.query,
+    type: req.body.type,
+    page: req.body.page,
+    filters: req.body.filters,
+    cursor: req.body.cursor,
+  });
+
+  return ok(res, data);
+});
 
 router.get('/multi', validate({ query: searchQuerySchema }), async (req, res) => {
   // Track search query

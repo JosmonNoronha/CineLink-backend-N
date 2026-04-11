@@ -93,6 +93,8 @@ async function searchOmdbLike({ q, type, page }) {
   return {
     Search,
     totalResults: String(data.total_results || Search.length || 0),
+    totalPages: data.total_pages || 0,
+    page,
     Response: Search.length ? 'True' : 'False',
   };
 }
@@ -274,6 +276,9 @@ async function searchPeople({ q, page = 1 }) {
   return {
     results: flatResults,
     totalResults: flatResults.length,
+    totalPages: data.total_pages || 0,
+    peopleTotalResults: data.total_results || 0,
+    page,
   };
 }
 
@@ -282,34 +287,37 @@ async function searchByGenreOmdbLike({ genreResults }) {
     return { Search: [], totalResults: '0', Response: 'False' };
   }
 
-  const Search = await Promise.all(
-    genreResults.results.map(async (r) => {
-      const mediaType = r.media_type || (r.first_air_date ? 'tv' : 'movie');
-      const title = mediaType === 'tv' ? r.name : r.title;
-      const date = mediaType === 'tv' ? r.first_air_date : r.release_date;
-      const rating = r.vote_average || 0;
+  const [movieGenreMap, tvGenreMap] = await Promise.all([
+    getGenreMap('movie'),
+    getGenreMap('tv'),
+  ]);
 
-      // Get genre names
-      const genreMap = await getGenreMap(mediaType);
-      const genres = (r.genre_ids || []).map((id) => genreMap[id]).filter(Boolean);
+  const Search = genreResults.results.map((r) => {
+    const mediaType = r.media_type || (r.first_air_date ? 'tv' : 'movie');
+    const title = mediaType === 'tv' ? r.name : r.title;
+    const date = mediaType === 'tv' ? r.first_air_date : r.release_date;
+    const rating = r.vote_average || 0;
+    const genreMap = mediaType === 'tv' ? tvGenreMap : movieGenreMap;
+    const genres = (r.genre_ids || []).map((id) => genreMap[id]).filter(Boolean);
 
-      return {
-        Title: title || 'N/A',
-        Year: yearFromDate(date),
-        imdbID: `tmdb:${mediaType}:${r.id}`,
-        Type: mediaType === 'tv' ? 'series' : 'movie',
-        Poster: posterUrl(r.poster_path),
-        Genre: genres.join(', '),
-        imdbRating: rating > 0 ? rating.toFixed(1) : 'N/A',
-        _tmdbId: r.id,
-        _isGenreSearch: true,
-      };
-    })
-  );
+    return {
+      Title: title || 'N/A',
+      Year: yearFromDate(date),
+      imdbID: `tmdb:${mediaType}:${r.id}`,
+      Type: mediaType === 'tv' ? 'series' : 'movie',
+      Poster: posterUrl(r.poster_path),
+      Genre: genres.join(', '),
+      imdbRating: rating > 0 ? rating.toFixed(1) : 'N/A',
+      _tmdbId: r.id,
+      _isGenreSearch: true,
+    };
+  });
 
   return {
     Search,
     totalResults: String(genreResults.totalResults || Search.length),
+    totalPages: genreResults.totalPages || 0,
+    page: genreResults.page || 1,
     Response: 'True',
   };
 }
