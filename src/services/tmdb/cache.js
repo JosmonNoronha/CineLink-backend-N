@@ -1,5 +1,6 @@
 const crypto = require('crypto');
-const { getRedisClient } = require('../../config/redis');
+const { getRedisClient, isRedisReady, markRedisUnavailable } = require('../../config/redis');
+const { logger } = require('../../utils/logger');
 
 const memory = new Map();
 
@@ -8,12 +9,22 @@ function hashKey(key) {
 }
 
 async function cacheGet(key) {
-  const redis = await getRedisClient();
   const h = hashKey(key);
 
-  if (redis) {
-    const val = await redis.get(h);
-    return val ? JSON.parse(val) : null;
+  if (isRedisReady()) {
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        const val = await redis.get(h);
+        if (val !== null && val !== undefined) {
+          return JSON.parse(val);
+        }
+        return null;
+      }
+    } catch (err) {
+      logger.warn('Redis get failed, cache miss', { key, err: err.message });
+      markRedisUnavailable();
+    }
   }
 
   const entry = memory.get(h);
@@ -26,13 +37,20 @@ async function cacheGet(key) {
 }
 
 async function cacheSet(key, value, ttlSeconds) {
-  const redis = await getRedisClient();
   const h = hashKey(key);
   const payload = JSON.stringify(value);
 
-  if (redis) {
-    await redis.set(h, payload, { EX: ttlSeconds });
-    return;
+  if (isRedisReady()) {
+    try {
+      const redis = await getRedisClient();
+      if (redis) {
+        await redis.set(h, payload, { EX: ttlSeconds });
+        return;
+      }
+    } catch (err) {
+      logger.warn('Redis set failed, skipping cache write', { key, err: err.message });
+      markRedisUnavailable();
+    }
   }
 
   memory.set(h, {
