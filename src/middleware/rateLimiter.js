@@ -15,4 +15,12 @@ const searchLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { globalLimiter, searchLimiter };
+const gamificationActionLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req?.user?.uid || req.ip,
+});
+
+module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter };

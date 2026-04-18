@@ -4,12 +4,24 @@ const { ok } = require('../utils/helpers');
 const { authMiddleware } = require('../middleware/auth');
 const { validate } = require('../middleware/validator');
 const { schemas } = require('../utils/validators');
+const { AppError } = require('../utils/errors');
+const { gamificationActionLimiter } = require('../middleware/rateLimiter');
 const profileService = require('../services/user/profile');
 const favoritesService = require('../services/user/favorites');
 const watchlistsService = require('../services/user/watchlists');
 const episodesService = require('../services/user/episodes');
+const gamificationService = require('../services/user/gamification');
 
 const router = Router();
+
+function requireIdempotencyKey(req) {
+  const key = req.headers['x-idempotency-key'];
+  const normalized = gamificationService.sanitizeIdempotencyKey(key);
+  if (!normalized) {
+    throw new AppError('Missing or invalid X-Idempotency-Key header', 400, 'VALIDATION_ERROR');
+  }
+  return normalized;
+}
 
 router.use(authMiddleware);
 router.use(async (req, _res, next) => {
@@ -208,31 +220,76 @@ router.patch(
 );
 
 router.get('/gamification', async (req, res) => {
-  const data = await profileService.getGamification(req.user.uid);
+  const data = (await profileService.getGamification(req.user.uid)) || gamificationService.defaultState();
   return ok(res, { gamification: data });
 });
+
+router.post(
+  '/gamification/actions/watch',
+  gamificationActionLimiter,
+  validate({
+    body: Joi.object({
+      movieId: Joi.string().trim().min(1).max(120).required(),
+      listName: Joi.string().trim().min(1).max(100).required(),
+    }),
+  }),
+  async (req, res) => {
+    const idempotencyKey = requireIdempotencyKey(req);
+    const data = await gamificationService.recordWatch(
+      req.user.uid,
+      req.body.movieId,
+      req.body.listName,
+      { idempotencyKey }
+    );
+    return ok(res, data);
+  }
+);
+
+router.post(
+  '/gamification/actions/list-created',
+  gamificationActionLimiter,
+  validate({
+    body: Joi.object({
+      listName: Joi.string().trim().min(1).max(100).required(),
+    }),
+  }),
+  async (req, res) => {
+    const idempotencyKey = requireIdempotencyKey(req);
+    const data = await gamificationService.recordListCreated(req.user.uid, req.body.listName, {
+      idempotencyKey,
+    });
+    return ok(res, data);
+  }
+);
+
+router.post(
+  '/gamification/actions/list-completed',
+  gamificationActionLimiter,
+  validate({
+    body: Joi.object({
+      listName: Joi.string().trim().min(1).max(100).required(),
+    }),
+  }),
+  async (req, res) => {
+    const idempotencyKey = requireIdempotencyKey(req);
+    const data = await gamificationService.recordListCompleted(req.user.uid, req.body.listName, {
+      idempotencyKey,
+    });
+    return ok(res, data);
+  }
+);
 
 router.put(
   '/gamification',
   validate({
-    body: Joi.object({
-      xp: Joi.number().integer().min(0).optional(),
-      totalWatched: Joi.number().integer().min(0).optional(),
-      listsCreated: Joi.number().integer().min(0).optional(),
-      listsCompleted: Joi.number().integer().min(0).optional(),
-      currentStreak: Joi.number().integer().min(0).optional(),
-      bestStreak: Joi.number().integer().min(0).optional(),
-      lastWatchDate: Joi.string().allow(null).optional(),
-      unlockedAchievements: Joi.array().items(Joi.string()).optional(),
-      watchedMovieIds: Joi.array().items(Joi.string()).optional(),
-      completedListNames: Joi.array().items(Joi.string()).optional(),
-      dailyWatchCounts: Joi.object().pattern(Joi.string(), Joi.number()).optional(),
-      weeklyWatchCounts: Joi.object().pattern(Joi.string(), Joi.number()).optional(),
-    }),
+    body: Joi.object({}).unknown(true),
   }),
-  async (req, res) => {
-    await profileService.updateGamification(req.user.uid, req.body);
-    return ok(res, { synced: true });
+  async (_req, _res) => {
+    throw new AppError(
+      'Direct gamification sync is disabled. Use action endpoints.',
+      410,
+      'GAMIFICATION_SYNC_DISABLED'
+    );
   }
 );
 

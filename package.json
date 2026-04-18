@@ -16,7 +16,11 @@
     "format:check": "prettier --check \"src/**/*.js\" \"test/**/*.js\"",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "smoke": "node scripts/smoke-api.js"
+    "smoke": "node scripts/smoke-api.js",
+    "gamification:recompute:dry": "node scripts/recompute-gamification.js --dry-run",
+    "gamification:recompute:live": "node scripts/recompute-gamification.js --live",
+    "gamification:verify": "node scripts/verify-gamification-delta.js",
+    "gamification:verify:json": "node scripts/verify-gamification-delta.js --json"
   },
   "dependencies": {
     "@sentry/node": "^8.47.0",
