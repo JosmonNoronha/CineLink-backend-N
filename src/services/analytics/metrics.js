@@ -1,4 +1,11 @@
-const { incrementCounter, incrementHashField, addToSortedSet, getMetric, getHash, getTopFromSortedSet } = require('./storage');
+const {
+  incrementCounter,
+  incrementHashField,
+  addToSortedSet,
+  getMetric,
+  getHash,
+  getTopFromSortedSet,
+} = require('./storage');
 const { logger } = require('../../utils/logger');
 
 // Metric key builders
@@ -24,7 +31,7 @@ const keys = {
  */
 async function trackRequest(endpoint, method, statusCode, responseTime, userId = null) {
   const endpointKey = `${method}:${endpoint}`;
-  
+
   await Promise.all([
     incrementCounter(keys.totalRequests()),
     incrementHashField(keys.requestsByEndpoint(), endpointKey),
@@ -50,7 +57,7 @@ async function trackRequest(endpoint, method, statusCode, responseTime, userId =
  */
 async function trackError(endpoint, method, error) {
   const endpointKey = `${method}:${endpoint}`;
-  
+
   await Promise.all([
     incrementCounter(keys.totalErrors()),
     incrementHashField(keys.errorsByEndpoint(), endpointKey),
@@ -65,7 +72,7 @@ async function trackError(endpoint, method, error) {
 async function trackActiveUser(userId) {
   const today = new Date().toISOString().slice(0, 10);
   const key = `${keys.activeUsers()}:${today}`;
-  
+
   // Use set to track unique users
   const { getRedisClient, isRedisReady } = require('../../config/redis');
   if (isRedisReady()) {
@@ -84,7 +91,7 @@ async function trackActiveUser(userId) {
  */
 async function trackSearch(query, userId = null) {
   await addToSortedSet(keys.popularSearches(), Date.now(), query);
-  
+
   if (userId) {
     await trackActiveUser(userId);
   }
@@ -96,7 +103,7 @@ async function trackSearch(query, userId = null) {
 async function trackMovieView(movieId, title, userId = null) {
   const movieData = JSON.stringify({ id: movieId, title });
   await addToSortedSet(keys.popularMovies(), Date.now(), movieData);
-  
+
   if (userId) {
     await trackActiveUser(userId);
   }
@@ -108,7 +115,7 @@ async function trackMovieView(movieId, title, userId = null) {
 async function trackTVView(tvId, title, userId = null) {
   const tvData = JSON.stringify({ id: tvId, title });
   await addToSortedSet(keys.popularTVShows(), tvId, tvData);
-  
+
   if (userId) {
     await trackActiveUser(userId);
   }
@@ -132,35 +139,34 @@ async function trackCacheMiss() {
  * Get overview metrics
  */
 async function getOverviewMetrics() {
-  const [
-    totalRequests,
-    totalErrors,
-    requestsByEndpoint,
-    statusCodes,
-    cacheHits,
-    cacheMisses,
-  ] = await Promise.all([
-    getMetric(keys.totalRequests()),
-    getMetric(keys.totalErrors()),
-    getHash(keys.requestsByEndpoint()),
-    getHash(keys.statusCodes()),
-    getMetric(keys.cacheHits()),
-    getMetric(keys.cacheMisses()),
-  ]);
+  const [totalRequests, totalErrors, requestsByEndpoint, statusCodes, cacheHits, cacheMisses] =
+    await Promise.all([
+      getMetric(keys.totalRequests()),
+      getMetric(keys.totalErrors()),
+      getHash(keys.requestsByEndpoint()),
+      getHash(keys.statusCodes()),
+      getMetric(keys.cacheHits()),
+      getMetric(keys.cacheMisses()),
+    ]);
 
-  const errorRate = totalRequests > 0 ? (totalErrors / totalRequests) * 100 : 0;
+  const totalRequestsNum = parseInt(totalRequests, 10) || 0;
+  const totalErrorsNum = parseInt(totalErrors, 10) || 0;
+  const cacheHitsNum = parseInt(cacheHits, 10) || 0;
+  const cacheMissesNum = parseInt(cacheMisses, 10) || 0;
+
+  const errorRate = totalRequestsNum > 0 ? (totalErrorsNum / totalRequestsNum) * 100 : 0;
   const cacheHitRate =
-    cacheHits + cacheMisses > 0 ? (cacheHits / (cacheHits + cacheMisses)) * 100 : 0;
+    cacheHitsNum + cacheMissesNum > 0 ? (cacheHitsNum / (cacheHitsNum + cacheMissesNum)) * 100 : 0;
 
   return {
-    totalRequests: parseInt(totalRequests) || 0,
-    totalErrors: parseInt(totalErrors) || 0,
+    totalRequests: totalRequestsNum,
+    totalErrors: totalErrorsNum,
     errorRate: errorRate.toFixed(2),
     requestsByEndpoint,
     statusCodes,
     cache: {
-      hits: parseInt(cacheHits) || 0,
-      misses: parseInt(cacheMisses) || 0,
+      hits: cacheHitsNum,
+      misses: cacheMissesNum,
       hitRate: cacheHitRate.toFixed(2),
     },
   };
@@ -211,7 +217,7 @@ async function getPopularTVShows(limit = 10) {
 async function getActiveUsersCount() {
   const today = new Date().toISOString().slice(0, 10);
   const key = `${keys.activeUsers()}:${today}`;
-  
+
   const { getRedisClient, isRedisReady } = require('../../config/redis');
   if (!isRedisReady()) {
     return 0;

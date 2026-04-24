@@ -1,5 +1,27 @@
 const request = require('supertest');
 
+jest.mock('../src/config/firebase', () => ({
+  initializeFirebase: jest.fn().mockResolvedValue({
+    auth: () => ({ listUsers: jest.fn().mockResolvedValue({ users: [] }) }),
+    firestore: () => ({}),
+  }),
+  warmupJwtVerification: jest.fn().mockResolvedValue(undefined),
+  warmupFirestore: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock('../src/config/redis', () => ({
+  initializeRedis: jest.fn().mockResolvedValue(null),
+  getRedisClient: jest.fn().mockReturnValue(null),
+  isRedisReady: jest.fn().mockReturnValue(false),
+  markRedisUnavailable: jest.fn(),
+}));
+
+jest.mock('../src/services/analytics', () => ({
+  analyticsService: {
+    initialize: jest.fn(),
+  },
+}));
+
 jest.mock('../src/services/search/unified', () => ({
   unifiedSearch: jest.fn().mockResolvedValue({
     Search: [
@@ -33,10 +55,14 @@ jest.mock('../src/services/search/unified', () => ({
 jest.setTimeout(45_000);
 
 describe('Unified search endpoint', () => {
-  test('POST /api/search returns unified search payload', async () => {
-    const { createApp } = require('../src/app');
-    const app = await createApp();
+  let app;
 
+  beforeAll(async () => {
+    const { createApp } = require('../src/app');
+    app = await createApp();
+  });
+
+  test('POST /api/search returns unified search payload', async () => {
     const res = await request(app)
       .post('/api/search')
       .send({ query: 'Matrix', type: 'all', page: 1, filters: {} });
@@ -55,9 +81,6 @@ describe('Unified search endpoint', () => {
   });
 
   test('POST /api/search rejects missing query', async () => {
-    const { createApp } = require('../src/app');
-    const app = await createApp();
-
     const res = await request(app).post('/api/search').send({ page: 1 });
 
     expect(res.status).toBe(400);

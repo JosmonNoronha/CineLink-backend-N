@@ -1,7 +1,29 @@
 const dotenv = require('dotenv');
 const Joi = require('joi');
+const path = require('path');
+const fs = require('fs');
 
-dotenv.config();
+const isJestRuntime = Boolean(process.env.JEST_WORKER_ID);
+if (!isJestRuntime) {
+  dotenv.config();
+}
+
+function failEnvironmentValidation(message, details = []) {
+  // In tests, throw so assertions can verify validation behavior.
+  if (process.env.NODE_ENV === 'test') {
+    const error = new Error([message, ...details].join('\n'));
+    error.name = 'EnvironmentValidationError';
+    throw error;
+  }
+
+  // eslint-disable-next-line no-console
+  console.error(message);
+  details.forEach((detail) => {
+    // eslint-disable-next-line no-console
+    console.error(detail);
+  });
+  process.exit(1);
+}
 
 const schema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
@@ -34,9 +56,71 @@ const schema = Joi.object({
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
 if (error) {
-  // eslint-disable-next-line no-console
-  console.error('Environment validation error:', error.message);
-  process.exit(1);
+  failEnvironmentValidation(
+    '❌ Environment validation error:',
+    error.details.map((detail) => `   - ${detail.message}`)
+  );
+}
+
+// Validate Firebase credentials - at least one method must be provided
+function validateFirebaseCredentials(env) {
+  const hasJson = env.FIREBASE_SERVICE_ACCOUNT_JSON;
+  const hasBase64 = env.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64;
+  const hasPath = env.FIREBASE_SERVICE_ACCOUNT_JSON_PATH;
+  const hasDiscreteVars = env.FIREBASE_PROJECT_ID && env.FIREBASE_CLIENT_EMAIL && env.FIREBASE_PRIVATE_KEY;
+
+  if (!hasJson && !hasBase64 && !hasPath && !hasDiscreteVars) {
+    throw new Error(
+      'Firebase credentials not configured. Provide ONE of:\n' +
+        '  1. FIREBASE_SERVICE_ACCOUNT_JSON (JSON string)\n' +
+        '  2. FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 (base64-encoded JSON)\n' +
+        '  3. FIREBASE_SERVICE_ACCOUNT_JSON_PATH (path to JSON file)\n' +
+        '  4. FIREBASE_PROJECT_ID + FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY'
+    );
+  }
+
+  // If using path, verify file exists
+  if (hasPath && !fs.existsSync(hasPath)) {
+    throw new Error(`Firebase service account file not found: ${path.resolve(hasPath)}`);
+  }
+
+  // In production, require Firebase configuration
+  if (env.NODE_ENV === 'production' && !hasJson && !hasBase64 && !hasPath && !hasDiscreteVars) {
+    throw new Error('Firebase credentials REQUIRED in production environment');
+  }
+}
+
+// Validate environment-specific requirements
+function validateEnvironmentRequirements(env) {
+  // Ensure TMDB API key is likely valid in every environment.
+  if (env.TMDB_API_KEY && env.TMDB_API_KEY.length < 20) {
+    throw new Error('TMDB_API_KEY appears to be invalid (too short)');
+  }
+
+  if (env.NODE_ENV === 'production') {
+    if (!env.SENTRY_DSN) {
+      // eslint-disable-next-line no-console
+      console.warn('⚠️  Warning: SENTRY_DSN not configured in production - error tracking disabled');
+    }
+
+    if (env.LOG_LEVEL === 'debug' || env.LOG_LEVEL === 'silly') {
+      // eslint-disable-next-line no-console
+      console.warn(`⚠️  Warning: LOG_LEVEL=${env.LOG_LEVEL} in production may impact performance`);
+    }
+  }
+
+  // CORS origin validation
+  if (env.CORS_ORIGIN.length === 0 && env.NODE_ENV === 'production') {
+    // eslint-disable-next-line no-console
+    console.warn('⚠️  Warning: CORS_ORIGIN is empty - all origins allowed (security risk in production)');
+  }
+}
+
+try {
+  validateFirebaseCredentials(value);
+  validateEnvironmentRequirements(value);
+} catch (validationError) {
+  failEnvironmentValidation('❌ Environment validation failed:', [`   ${validationError.message}`]);
 }
 
 const env = {

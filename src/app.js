@@ -6,6 +6,7 @@ const compression = require('compression');
 const Sentry = require('@sentry/node');
 
 const { env } = require('./config/environment');
+const { correlationIdMiddleware } = require('./middleware/correlationId');
 const { requestLogger } = require('./middleware/logger');
 const { createMetricsMiddleware, analyticsMiddleware } = require('./middleware/metrics');
 const { globalLimiter } = require('./middleware/rateLimiter');
@@ -138,6 +139,7 @@ async function createApp() {
     })
   );
 
+  app.use(correlationIdMiddleware);
   app.use(requestLogger);
   app.use(createMetricsMiddleware());
   app.use(analyticsMiddleware);

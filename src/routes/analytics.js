@@ -3,6 +3,7 @@ const { analyticsService } = require('../services/analytics');
 const { ok } = require('../utils/helpers');
 const { optionalAuth } = require('../middleware/auth');
 const { logger } = require('../utils/logger');
+const { AppError } = require('../utils/errors');
 
 const router = Router();
 
@@ -22,10 +23,16 @@ router.get('/overview', optionalAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('Failed to get analytics overview', { error: error.message });
-    return res.status(500).json({
-      success: false,
-      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve analytics overview' },
-    });
+    throw new AppError(
+      'Failed to retrieve analytics overview',
+      500,
+      'ANALYTICS_ERROR',
+      { serviceError: error.message },
+      {
+        userMessage: 'Unable to load analytics overview right now. Please try again.',
+        retryable: true,
+      }
+    );
   }
 });
 
@@ -44,10 +51,16 @@ router.get('/popular-searches', optionalAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('Failed to get popular searches', { error: error.message });
-    return res.status(500).json({
-      success: false,
-      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve popular searches' },
-    });
+    throw new AppError(
+      'Failed to retrieve popular searches',
+      500,
+      'ANALYTICS_ERROR',
+      { serviceError: error.message },
+      {
+        userMessage: 'Unable to load popular searches right now. Please try again.',
+        retryable: true,
+      }
+    );
   }
 });
 
@@ -63,10 +76,16 @@ router.get('/popular-content', optionalAuth, async (req, res) => {
     return ok(res, content);
   } catch (error) {
     logger.error('Failed to get popular content', { error: error.message });
-    return res.status(500).json({
-      success: false,
-      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve popular content' },
-    });
+    throw new AppError(
+      'Failed to retrieve popular content',
+      500,
+      'ANALYTICS_ERROR',
+      { serviceError: error.message },
+      {
+        userMessage: 'Unable to load popular content right now. Please try again.',
+        retryable: true,
+      }
+    );
   }
 });
 
@@ -81,10 +100,16 @@ router.get('/user-engagement', optionalAuth, async (req, res) => {
     return ok(res, engagement);
   } catch (error) {
     logger.error('Failed to get user engagement', { error: error.message });
-    return res.status(500).json({
-      success: false,
-      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve user engagement' },
-    });
+    throw new AppError(
+      'Failed to retrieve user engagement',
+      500,
+      'ANALYTICS_ERROR',
+      { serviceError: error.message },
+      {
+        userMessage: 'Unable to load user engagement right now. Please try again.',
+        retryable: true,
+      }
+    );
   }
 });
 
@@ -102,10 +127,16 @@ router.get('/performance', optionalAuth, async (req, res) => {
     });
   } catch (error) {
     logger.error('Failed to get performance metrics', { error: error.message });
-    return res.status(500).json({
-      success: false,
-      error: { code: 'ANALYTICS_ERROR', message: 'Failed to retrieve performance metrics' },
-    });
+    throw new AppError(
+      'Failed to retrieve performance metrics',
+      500,
+      'ANALYTICS_ERROR',
+      { serviceError: error.message },
+      {
+        userMessage: 'Unable to load performance metrics right now. Please try again.',
+        retryable: true,
+      }
+    );
   }
 });
 

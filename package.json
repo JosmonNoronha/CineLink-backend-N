@@ -20,7 +20,8 @@
     "gamification:recompute:dry": "node scripts/recompute-gamification.js --dry-run",
     "gamification:recompute:live": "node scripts/recompute-gamification.js --live",
     "gamification:verify": "node scripts/verify-gamification-delta.js",
-    "gamification:verify:json": "node scripts/verify-gamification-delta.js --json"
+    "gamification:verify:json": "node scripts/verify-gamification-delta.js --json",
+    "gamification:verify:deployed": "powershell -ExecutionPolicy Bypass -File scripts/verify-gamification-deployed.ps1"
   },
   "dependencies": {
     "@sentry/node": "^8.47.0",

@@ -6,6 +6,8 @@ const recoService = require('../services/tmdb/recommendations');
 const { tmdbGet } = require('../services/tmdb/client');
 const { getGenreMap } = require('../services/tmdb/genres');
 const { tmdbConfig } = require('../config/tmdb');
+const { logger } = require('../utils/logger');
+const { AppError } = require('../utils/errors');
 const axios = require('axios');
 
 const router = Router();
@@ -81,7 +83,7 @@ router.post(
       top_n: Joi.number().integer().min(1).max(20).default(10),
     }),
   }),
-  async (req, res) => {
+  async (req, res, next) => {
     const { titles, top_n = 10 } = req.body;
 
     try {
@@ -108,14 +110,19 @@ router.post(
       });
     } catch (error) {
       logger.error('External ML API failed:', { error: error.message });
-
-      // Return error with helpful message
-      return res.status(503).json({
-        success: false,
-        error: 'External ML API temporarily unavailable',
-        details: error.message,
-        note: 'Use the primary /recommendations endpoint for TMDB-based recommendations',
-      });
+      throw new AppError(
+        'External ML API temporarily unavailable',
+        503,
+        'EXTERNAL_ML_API_UNAVAILABLE',
+        {
+          serviceError: error.message,
+          note: 'Use the primary /recommendations endpoint for TMDB-based recommendations',
+        },
+        {
+          userMessage: 'Recommendations service is temporarily unavailable. Please try again later.',
+          retryable: true,
+        }
+      );
     }
   }
 );

@@ -2,11 +2,19 @@ const { getAuth } = require('../config/firebase');
 const { AppError } = require('../utils/errors');
 const { logger } = require('../utils/logger');
 const { Buffer } = require('buffer');
+const TokenCacheService = require('../services/tokenCache');
+const { getRedisClient } = require('../config/redis');
 
-// Simple in-memory token cache to avoid slow Firebase verification
-// Cache tokens for 5 minutes to bypass 12+ second Firebase public key fetches
-const tokenCache = new Map();
-const TOKEN_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// Token cache service - uses Redis with in-memory fallback
+let tokenCacheService = null;
+
+function getTokenCacheService() {
+  if (!tokenCacheService) {
+    const redisClient = getRedisClient();
+    tokenCacheService = new TokenCacheService(redisClient);
+  }
+  return tokenCacheService;
+}
 
 function deriveAuthorizationContext(claims = {}) {
   const roles = [];
@@ -43,30 +51,6 @@ function decodeJwtPayload(token) {
   }
 }
 
-function getCachedToken(token) {
-  const cached = tokenCache.get(token);
-  if (!cached) return null;
-  if (Date.now() - cached.timestamp > TOKEN_CACHE_TTL) {
-    tokenCache.delete(token);
-    return null;
-  }
-  return cached.decoded;
-}
-
-function cacheToken(token, decoded) {
-  tokenCache.set(token, { decoded, timestamp: Date.now() });
-  // Cleanup old entries if cache grows too large
-  if (tokenCache.size > 1000) {
-    const entries = Array.from(tokenCache.entries());
-    const now = Date.now();
-    entries.forEach(([key, value]) => {
-      if (now - value.timestamp > TOKEN_CACHE_TTL) {
-        tokenCache.delete(key);
-      }
-    });
-  }
-}
-
 async function authMiddleware(req, _res, next) {
   const startTime = Date.now();
   try {
@@ -77,7 +61,17 @@ async function authMiddleware(req, _res, next) {
     }
 
     // Check cache first to avoid slow Firebase verification
-    const cached = getCachedToken(token);
+    const cache = getTokenCacheService();
+    let cached = await cache.getToken(token);
+
+    // Check if token is revoked
+    if (cached) {
+      const isRevoked = await cache.isRevoked(token);
+      if (isRevoked) {
+        cached = null;
+      }
+    }
+
     if (cached) {
       const authz = deriveAuthorizationContext(cached);
       req.user = {
@@ -93,7 +87,7 @@ async function authMiddleware(req, _res, next) {
     }
 
     const decoded = await getAuth().verifyIdToken(token);
-    cacheToken(token, decoded);
+    await cache.cacheToken(token, decoded);
     const authz = deriveAuthorizationContext(decoded);
     req.user = {
       uid: decoded.uid,
@@ -162,24 +156,29 @@ async function optionalAuth(req, _res, next) {
     }
 
     // Check cache first
-    const cached = getCachedToken(token);
+    const cache = getTokenCacheService();
+    let cached = await cache.getToken(token);
+
     if (cached) {
-      const authz = deriveAuthorizationContext(cached);
-      req.user = {
-        uid: cached.uid,
-        email: cached.email,
-        name: cached.name,
-        picture: cached.picture,
-        claims: cached,
-        roles: authz.roles,
-        permissions: authz.permissions,
-      };
-      return next();
+      const isRevoked = await cache.isRevoked(token);
+      if (!isRevoked) {
+        const authz = deriveAuthorizationContext(cached);
+        req.user = {
+          uid: cached.uid,
+          email: cached.email,
+          name: cached.name,
+          picture: cached.picture,
+          claims: cached,
+          roles: authz.roles,
+          permissions: authz.permissions,
+        };
+        return next();
+      }
     }
 
     // Verify token
     const decoded = await getAuth().verifyIdToken(token);
-    cacheToken(token, decoded);
+    await cache.cacheToken(token, decoded);
     const authz = deriveAuthorizationContext(decoded);
     req.user = {
       uid: decoded.uid,
