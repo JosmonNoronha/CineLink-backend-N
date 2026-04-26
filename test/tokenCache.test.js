@@ -20,7 +20,7 @@ describe('TokenCacheService', () => {
       mockRedisClient = {
         isReady: true,
         get: jest.fn(),
-        setex: jest.fn(),
+        set: jest.fn(),
         del: jest.fn(),
         keys: jest.fn(),
       };
@@ -29,14 +29,14 @@ describe('TokenCacheService', () => {
     });
 
     it('caches token with TTL matching JWT expiration', async () => {
-      mockRedisClient.setex.mockResolvedValue('OK');
+      mockRedisClient.set.mockResolvedValue('OK');
 
       await service.cacheToken(mockToken, mockDecoded);
 
-      expect(mockRedisClient.setex).toHaveBeenCalled();
-      const [key, ttl, value] = mockRedisClient.setex.mock.calls[0];
+      expect(mockRedisClient.set).toHaveBeenCalled();
+      const [key, value, options] = mockRedisClient.set.mock.calls[0];
       expect(key).toContain('auth:token:');
-      expect(Number(ttl)).toBeGreaterThan(0);
+      expect(Number(options.EX)).toBeGreaterThan(0);
       expect(JSON.parse(value)).toEqual(mockDecoded);
     });
 
@@ -59,14 +59,15 @@ describe('TokenCacheService', () => {
     });
 
     it('revokes token by adding to revocation set', async () => {
-      mockRedisClient.setex.mockResolvedValue('OK');
+      mockRedisClient.set.mockResolvedValue('OK');
 
       await service.revokeToken(mockToken, mockDecoded);
 
-      expect(mockRedisClient.setex).toHaveBeenCalled();
-      const [key, ttl] = mockRedisClient.setex.mock.calls[0];
+      expect(mockRedisClient.set).toHaveBeenCalled();
+      const [key, value, options] = mockRedisClient.set.mock.calls[0];
       expect(key).toContain('auth:revoked:');
-      expect(Number(ttl)).toBeGreaterThan(0);
+      expect(value).toBe('1');
+      expect(Number(options.EX)).toBeGreaterThan(0);
     });
 
     it('detects revoked tokens', async () => {
@@ -160,7 +161,7 @@ describe('TokenCacheService', () => {
       mockRedisClient = {
         isReady: false,
         get: jest.fn(),
-        setex: jest.fn(),
+        set: jest.fn(),
       };
 
       service = new TokenCacheService(mockRedisClient);
@@ -171,7 +172,7 @@ describe('TokenCacheService', () => {
       const result = await service.getToken(mockToken);
 
       expect(result).toEqual(mockDecoded);
-      expect(mockRedisClient.setex).not.toHaveBeenCalled();
+      expect(mockRedisClient.set).not.toHaveBeenCalled();
     });
   });
 

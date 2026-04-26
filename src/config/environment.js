@@ -34,6 +34,10 @@ const schema = Joi.object({
   TMDB_API_KEY: Joi.string().required(),
   TMDB_BASE_URL: Joi.string().uri().default('https://api.themoviedb.org/3'),
   TMDB_IMAGE_BASE_URL: Joi.string().uri().default('https://image.tmdb.org/t/p'),
+  TMDB_WARMUP_ENABLED: Joi.boolean().truthy('true').falsy('false').optional(),
+  TMDB_WARMUP_SCOPE: Joi.string().valid('full', 'dev', 'minimal').optional(),
+  TMDB_WARMUP_BACKOFF_MS: Joi.number().min(0).optional(),
+  TMDB_WARMUP_COOLDOWN_MS: Joi.number().min(0).optional(),
 
   FIREBASE_SERVICE_ACCOUNT_JSON: Joi.string().allow(''),
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: Joi.string().allow(''),
@@ -135,6 +139,10 @@ const env = {
   TMDB_API_KEY: value.TMDB_API_KEY,
   TMDB_BASE_URL: value.TMDB_BASE_URL,
   TMDB_IMAGE_BASE_URL: value.TMDB_IMAGE_BASE_URL,
+  TMDB_WARMUP_ENABLED: value.TMDB_WARMUP_ENABLED === undefined ? false : value.TMDB_WARMUP_ENABLED,
+  TMDB_WARMUP_SCOPE: value.TMDB_WARMUP_SCOPE || (value.NODE_ENV === 'production' ? 'full' : 'dev'),
+  TMDB_WARMUP_BACKOFF_MS: value.TMDB_WARMUP_BACKOFF_MS || 5000,
+  TMDB_WARMUP_COOLDOWN_MS: value.TMDB_WARMUP_COOLDOWN_MS || 60000,
 
   FIREBASE_SERVICE_ACCOUNT_JSON: value.FIREBASE_SERVICE_ACCOUNT_JSON,
   FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: value.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64,

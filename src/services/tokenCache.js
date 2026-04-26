@@ -62,7 +62,7 @@ class TokenCacheService {
 
     try {
       if (this.redis && this.redis.isReady) {
-        await this.redis.setex(cacheKey, expiresIn, JSON.stringify(decoded));
+        await this.redis.set(cacheKey, JSON.stringify(decoded), { EX: expiresIn });
       }
     } catch (error) {
       logger.warn(`Token cache Redis storage failed: ${error.message}`);
@@ -110,7 +110,7 @@ class TokenCacheService {
 
     try {
       if (this.redis && this.redis.isReady) {
-        await this.redis.setex(revocationKey, expiresIn, '1');
+        await this.redis.set(revocationKey, '1', { EX: expiresIn });
       }
     } catch (error) {
       logger.warn(`Token revocation Redis storage failed: ${error.message}`);

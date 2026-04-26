@@ -227,6 +227,10 @@ describe('Environment Validation', () => {
       expect(env.SEARCH_RATE_LIMIT_MAX).toBe(40);
       expect(env.LOG_LEVEL).toBe('info');
       expect(env.SENTRY_TRACES_SAMPLE_RATE).toBe(0);
+      expect(env.TMDB_WARMUP_ENABLED).toBe(false);
+      expect(env.TMDB_WARMUP_SCOPE).toBe('dev');
+      expect(env.TMDB_WARMUP_BACKOFF_MS).toBe(5000);
+      expect(env.TMDB_WARMUP_COOLDOWN_MS).toBe(60000);
     });
   });
 });

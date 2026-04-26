@@ -16,6 +16,7 @@ const { logger } = require('./utils/logger');
 const { initializeFirebase } = require('./config/firebase');
 const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
+const { warmupTmdbCaches } = require('./services/tmdb/warmup');
 
 function shouldEnableStatusMonitor() {
   if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
@@ -57,6 +58,21 @@ async function createApp() {
 
   // Initialize analytics service
   analyticsService.initialize();
+
+  try {
+    const warmupResult = await warmupTmdbCaches({
+      enabled: env.TMDB_WARMUP_ENABLED,
+      scope: env.TMDB_WARMUP_SCOPE,
+      backoffMs: env.TMDB_WARMUP_BACKOFF_MS,
+      cooldownMs: env.TMDB_WARMUP_COOLDOWN_MS,
+    });
+
+    logger.info('TMDB warmup startup completed', warmupResult);
+  } catch (error) {
+    logger.warn('TMDB warmup startup failed; continuing boot', {
+      error: error.message,
+    });
+  }
 
   const app = express();
 
