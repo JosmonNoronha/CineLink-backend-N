@@ -187,3 +187,93 @@ If you'd like, I can:
 
 - add a small middleware example that enforces `METRICS_BEARER_TOKEN`, and
 - append example `prometheus.yml` and `alerting` rule files for a production setup.
+
+--
+
+## Path A — Grafana Cloud (Recommended for Render)
+
+This is the recommended approach for monitoring your backend deployed on Render. Grafana Cloud offers a free tier and requires zero infrastructure — metrics are pushed from your Node app to hosted collectors.
+
+### Step 1 — Sign up for Grafana Cloud
+
+- Go to https://grafana.com → **Start for free** → create an account.
+- You get a free stack with Prometheus remote write and hosted Grafana dashboards.
+
+### Step 2 — Get Prometheus remote write credentials
+
+- In Grafana Cloud, navigate: **Home → Connections → Add new connection → Prometheus**.
+- Copy these three credentials:
+  - **Remote Write URL**: looks like `https://prometheus-prod-XX.grafana.net/api/prom/push`
+  - **Username**: a numeric ID (e.g., `12345`)
+  - **API Key**: generate one in your Grafana Cloud account
+
+### Step 3 — Deploy to Render
+
+Your app has been updated to support pushing metrics to Grafana Cloud. No new dependencies to install — `prom-client` is already included.
+
+In your Render service → **Environment** tab, add:
+
+```
+GRAFANA_REMOTE_WRITE_URL=https://prometheus-prod-XX.grafana.net/api/prom/push
+GRAFANA_USERNAME=12345
+GRAFANA_API_KEY=your_api_key_here
+GRAFANA_PUSH_INTERVAL_MS=15000
+METRICS_SECRET=your_random_secret_string_here
+NODE_ENV=production
+```
+
+**Note on METRICS_SECRET:**
+
+- In production, the `/api/metrics` endpoint is secured with a token check. If `METRICS_SECRET` is not set, the endpoint remains open (logs a warning).
+- Set this to a strong random value (e.g., `$(openssl rand -hex 32)` or a secure password generator).
+- Only Grafana Cloud (via bearer token in env vars) will access this endpoint; you don't need to manually pass the token.
+
+### Step 4 — How it works
+
+- Every `GRAFANA_PUSH_INTERVAL_MS` milliseconds (default 15 seconds), your app pushes collected metrics to Grafana Cloud via the remote write endpoint.
+- The `/api/metrics` endpoint still exists locally for dev/debugging but is secured in production.
+- Metrics arrive in Grafana Cloud within seconds; dashboards auto-populate from these metrics.
+- No separate Prometheus instance needed.
+
+### Step 5 — Create dashboards in Grafana Cloud
+
+- In your Grafana Cloud portal, go to **Dashboards → Import**.
+- Use dashboard ID **11159** (Node.js app) or **14171** (Express server) from grafana.com/dashboards.
+- Select your auto-created Prometheus data source.
+- Your metrics will appear within 1-2 minutes of deploying.
+
+Alternatively, import the JSON dashboard from `monitoring/grafana_cinelink_dashboard.json` if you prefer custom queries tailored to CineLink's metrics.
+
+### Step 6 — Verify metrics are flowing
+
+- In Grafana Cloud → **Explore**, select your Prometheus data source.
+- Query one of your metrics (e.g., `http_requests_total{job="cinelink-backend"}`).
+- You should see data points appearing.
+
+If no data:
+
+- Check app logs on Render for any errors during push (search for `[metrics] Push to Grafana`).
+- Confirm `GRAFANA_REMOTE_WRITE_URL`, `GRAFANA_USERNAME`, and `GRAFANA_API_KEY` are correct.
+- Ensure your app is handling traffic so metrics are being recorded.
+
+### Step 7 — Secure the metrics endpoint (optional but recommended)
+
+In production, only allow requests with the `METRICS_SECRET`:
+
+```bash
+curl -H "X-Metrics-Token: your_random_secret_string_here" https://your-render-service.onrender.com/api/metrics
+```
+
+This is already enforced in the code if `METRICS_SECRET` is set and `NODE_ENV=production`.
+
+### Comparison with local Prometheus setup
+
+| Feature        | Local Docker Compose   | Grafana Cloud                |
+| -------------- | ---------------------- | ---------------------------- |
+| Infrastructure | Docker on your machine | Hosted (managed)             |
+| Costs          | Free (local)           | Free tier with limits        |
+| Scalability    | Single instance        | Scales automatically         |
+| Alerts         | Manual config          | Built-in alerting            |
+| Data retention | Limited by disk        | 15 days (free) / longer paid |
+| Access         | localhost:9090         | Web dashboard (secure)       |
+| Setup time     | ~5 min (docker)        | ~10 min (sign-up + config)   |

@@ -56,6 +56,12 @@ const schema = Joi.object({
 
   SENTRY_DSN: Joi.string().uri().allow(''),
   SENTRY_TRACES_SAMPLE_RATE: Joi.number().min(0).max(1).default(0),
+
+  GRAFANA_REMOTE_WRITE_URL: Joi.string().uri().allow('').optional(),
+  GRAFANA_USERNAME: Joi.string().allow('').optional(),
+  GRAFANA_API_KEY: Joi.string().allow('').optional(),
+  GRAFANA_PUSH_INTERVAL_MS: Joi.number().min(5000).default(15000).optional(),
+  METRICS_SECRET: Joi.string().allow('').optional(),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -161,6 +167,12 @@ const env = {
 
   SENTRY_DSN: value.SENTRY_DSN,
   SENTRY_TRACES_SAMPLE_RATE: value.SENTRY_TRACES_SAMPLE_RATE,
+
+  GRAFANA_REMOTE_WRITE_URL: value.GRAFANA_REMOTE_WRITE_URL,
+  GRAFANA_USERNAME: value.GRAFANA_USERNAME,
+  GRAFANA_API_KEY: value.GRAFANA_API_KEY,
+  GRAFANA_PUSH_INTERVAL_MS: value.GRAFANA_PUSH_INTERVAL_MS,
+  METRICS_SECRET: value.METRICS_SECRET,
 };
 
 module.exports = { env };

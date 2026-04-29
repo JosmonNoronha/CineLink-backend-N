@@ -17,6 +17,7 @@ const { initializeFirebase } = require('./config/firebase');
 const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
 const { warmupTmdbCaches } = require('./services/tmdb/warmup');
+const { initializeGrafanaCloudPush } = require('./routes/metrics');
 
 function shouldEnableStatusMonitor() {
   if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
@@ -61,7 +62,8 @@ async function createApp() {
 
   try {
     const warmupResult = await warmupTmdbCaches({
-      enabled: env.TMDB_WARMUP_ENABLED,
+      // Keep tests deterministic even if env vars are mutated in other suites.
+      enabled: env.NODE_ENV === 'test' ? false : env.TMDB_WARMUP_ENABLED,
       scope: env.TMDB_WARMUP_SCOPE,
       backoffMs: env.TMDB_WARMUP_BACKOFF_MS,
       cooldownMs: env.TMDB_WARMUP_COOLDOWN_MS,
@@ -160,6 +162,11 @@ async function createApp() {
   app.use(createMetricsMiddleware());
   app.use(analyticsMiddleware);
   app.use(globalLimiter);
+
+  // Initialize Grafana Cloud push (only in production)
+  if (env.NODE_ENV === 'production') {
+    initializeGrafanaCloudPush();
+  }
 
   app.use(env.API_PREFIX, routes);
   app.use(notFoundHandler);
