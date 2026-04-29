@@ -2,6 +2,7 @@ const { Router } = require('express');
 
 const health = require('./health');
 const status = require('./status');
+const metrics = require('./metrics');
 const analytics = require('./analytics');
 const movies = require('./movies');
 const tv = require('./tv');
@@ -13,6 +14,7 @@ const router = Router();
 
 router.use('/health', health);
 router.use('/status', status);
+router.use('/metrics', metrics.router);
 router.use('/analytics', analytics);
 router.use('/movies', movies);
 router.use('/tv', tv);

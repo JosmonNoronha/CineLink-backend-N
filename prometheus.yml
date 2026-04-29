@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'cinelink-backend'
+    metrics_path: '/api/metrics'
+    static_configs:
+      # When running Prometheus on the host and backend on host
+      - targets: ['localhost:5001']
+      # When running Prometheus in Docker and backend on host (Windows/Mac)
+      - targets: ['host.docker.internal:5001']

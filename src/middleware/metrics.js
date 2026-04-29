@@ -2,6 +2,7 @@ const responseTime = require('response-time');
 const { metrics } = require('../services/analytics');
 const { logger } = require('../utils/logger');
 const { isRedisReady } = require('../config/redis');
+const { httpRequestDuration, httpRequestTotal } = require('../routes/metrics');
 
 /**
  * Middleware to track API performance metrics
@@ -9,6 +10,28 @@ const { isRedisReady } = require('../config/redis');
  */
 function createMetricsMiddleware() {
   return responseTime(async (req, res, time) => {
+    const routeLabel = `${req.baseUrl || ''}${req.route?.path || req.path}`;
+    const durationSeconds = Number(time) / 1000;
+    const statusCode = String(res.statusCode);
+
+    try {
+      httpRequestDuration.observe(
+        {
+          method: req.method,
+          route: routeLabel,
+          status_code: statusCode,
+        },
+        durationSeconds
+      );
+      httpRequestTotal.inc({
+        method: req.method,
+        route: routeLabel,
+        status_code: statusCode,
+      });
+    } catch (error) {
+      logger.debug('Prometheus metrics tracking failed', { error: error.message });
+    }
+
     // Skip analytics if Redis is not ready to avoid Firestore overhead
     if (!isRedisReady()) {
       return;
@@ -17,15 +40,15 @@ function createMetricsMiddleware() {
     try {
       const endpoint = req.route?.path || req.path;
       const method = req.method;
-      const statusCode = res.statusCode;
+      const numericStatusCode = res.statusCode;
       const userId = req.user?.uid || null;
 
       // Track the request
-      await metrics.trackRequest(endpoint, method, statusCode, Math.round(time), userId);
+      await metrics.trackRequest(endpoint, method, numericStatusCode, Math.round(time), userId);
 
       // Track errors
-      if (statusCode >= 400) {
-        await metrics.trackError(endpoint, method, { statusCode });
+      if (numericStatusCode >= 400) {
+        await metrics.trackError(endpoint, method, { statusCode: numericStatusCode });
       }
     } catch (error) {
       // Silent fail - don't let analytics break the app
