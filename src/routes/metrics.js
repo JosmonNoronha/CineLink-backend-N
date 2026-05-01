@@ -1,5 +1,4 @@
 const { Router } = require('express');
-const https = require('https');
 const promClient = require('prom-client');
 const { logger } = require('../utils/logger');
 
@@ -38,67 +37,48 @@ const cacheMissRate = new promClient.Counter({
   registers: [register],
 });
 
-// Grafana Cloud remote write configuration
+// Grafana Cloud configuration
 const GRAFANA_REMOTE_WRITE_URL = process.env.GRAFANA_REMOTE_WRITE_URL;
 const GRAFANA_USERNAME = process.env.GRAFANA_USERNAME;
 const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY;
 const GRAFANA_PUSH_INTERVAL_MS = parseInt(process.env.GRAFANA_PUSH_INTERVAL_MS || '15000', 10);
 const METRICS_SECRET = process.env.METRICS_SECRET;
 
-/**
- * Push metrics to Grafana Cloud via remote write endpoint
- */
-async function pushMetricsToGrafana() {
+let gateway = null;
+
+function getGateway() {
+  if (gateway) return gateway;
+
   if (!GRAFANA_REMOTE_WRITE_URL || !GRAFANA_USERNAME || !GRAFANA_API_KEY) {
-    return; // skip if not configured (local dev)
+    return null;
   }
 
+  const auth = Buffer.from(`${GRAFANA_USERNAME}:${GRAFANA_API_KEY}`).toString('base64');
+
+  gateway = new promClient.Pushgateway(
+    GRAFANA_REMOTE_WRITE_URL,
+    {
+      headers: { Authorization: `Basic ${auth}` },
+      timeout: 10000,
+    },
+    register
+  );
+
+  return gateway;
+}
+
+async function pushMetricsToGrafana() {
+  const gw = getGateway();
+  if (!gw) return;
+
   try {
-    const metrics = await register.metrics();
-    const auth = Buffer.from(`${GRAFANA_USERNAME}:${GRAFANA_API_KEY}`).toString('base64');
-
-    const url = new URL(GRAFANA_REMOTE_WRITE_URL);
-    const options = {
-      hostname: url.hostname,
-      path: url.pathname,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/plain; version=0.0.4',
-        Authorization: `Basic ${auth}`,
-        'Content-Length': Buffer.byteLength(metrics),
-      },
-    };
-
-    await new Promise((resolve, reject) => {
-      const req = https.request(options, (res) => {
-        let data = '';
-        res.on('data', (chunk) => {
-          data += chunk;
-        });
-        res.on('end', () => {
-          if (res.statusCode >= 400) {
-            logger.warn('[metrics] Push failed', { status: res.statusCode, body: data });
-            reject(new Error(`Push failed with status ${res.statusCode}: ${data}`));
-          } else {
-            logger.info('[metrics] Pushed to Grafana Cloud OK', { status: res.statusCode });
-            resolve();
-          }
-        });
-      });
-      req.on('error', reject);
-      req.write(metrics);
-      req.end();
-    });
-
-    logger.info('[metrics] Pushed to Grafana Cloud', { status: res.statusCode });
+    await gw.pushAdd({ jobName: 'cinelink-backend' });
+    logger.info('[metrics] Pushed to Grafana Cloud OK');
   } catch (err) {
-    logger.warn('[metrics] Push to Grafana Cloud failed:', { error: err.message });
+    logger.warn('[metrics] Push to Grafana Cloud failed', { error: err.message });
   }
 }
 
-/**
- * Initialize Grafana Cloud push (only in production)
- */
 function initializeGrafanaCloudPush() {
   if (process.env.NODE_ENV === 'production' && GRAFANA_REMOTE_WRITE_URL) {
     setInterval(pushMetricsToGrafana, GRAFANA_PUSH_INTERVAL_MS);
@@ -109,15 +89,13 @@ function initializeGrafanaCloudPush() {
   }
 }
 
-// Middleware to secure /metrics endpoint in production
 function metricsSecurityMiddleware(req, res, next) {
-  // Allow unrestricted access in development
   if (process.env.NODE_ENV !== 'production') {
     return next();
   }
 
-  // In production, require METRICS_SECRET header
   const providedSecret = req.headers['x-metrics-token'] || req.headers['authorization'];
+
   if (!METRICS_SECRET) {
     logger.warn('[metrics] METRICS_SECRET not configured in production - metrics endpoint is open');
     return next();
