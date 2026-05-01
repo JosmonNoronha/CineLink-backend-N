@@ -213,6 +213,8 @@ Important correction: the previous `GRAFANA_REMOTE_WRITE_URL` / `prom/prometheus
 
 Your app has been updated to support sending metrics to Grafana Cloud via OTLP. Local Prometheus metrics are still available through `/api/metrics`, but production export now uses OpenTelemetry.
 
+Important detail: the app does not depend on `/api/metrics` for Grafana Cloud. The request/cache counters are recorded into the in-process Prometheus registry for local scraping and also into the OpenTelemetry meter for Grafana Cloud export. In Grafana Cloud, query the OTLP-connected datasource, not the local `/api/metrics` endpoint.
+
 In your Render service → **Environment** tab, add:
 
 ```
@@ -251,6 +253,7 @@ Alternatively, import the JSON dashboard from `monitoring/grafana_cinelink_dashb
 ### Step 6 — Verify metrics are flowing
 
 - In Grafana Cloud → **Explore**, select the data source created by the OpenTelemetry connection tile.
+- If you only see a Prometheus datasource named like `grafanacloud-...-prom`, make sure it is the one attached to your OpenTelemetry connection. The browser panel can look empty if you are querying a different Grafana Cloud datasource or an old metrics instance.
 - Query one of your metrics (e.g., `http_requests_total{job="cinelink-backend"}`).
 - You should see data points appearing.
 

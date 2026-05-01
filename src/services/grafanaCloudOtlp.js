@@ -1,6 +1,7 @@
 let MeterProvider;
 let PeriodicExportingMetricReader;
 let OTLPMetricExporter;
+let resourceFromAttributes;
 
 try {
   // Optional dependency set: the app still runs without Grafana Cloud configured.
@@ -8,10 +9,13 @@ try {
   ({ MeterProvider, PeriodicExportingMetricReader } = require('@opentelemetry/sdk-metrics'));
   // eslint-disable-next-line global-require
   ({ OTLPMetricExporter } = require('@opentelemetry/exporter-metrics-otlp-http'));
+  // eslint-disable-next-line global-require
+  ({ resourceFromAttributes } = require('@opentelemetry/resources'));
 } catch (_error) {
   MeterProvider = null;
   PeriodicExportingMetricReader = null;
   OTLPMetricExporter = null;
+  resourceFromAttributes = null;
 }
 
 const { logger } = require('../utils/logger');
@@ -44,6 +48,26 @@ function parseHeaderString(headerString) {
     }, {});
 }
 
+function parseResourceAttributes(attributeString) {
+  if (!attributeString) return {};
+
+  return attributeString
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .reduce((accumulator, entry) => {
+      const separatorIndex = entry.indexOf('=');
+      if (separatorIndex === -1) return accumulator;
+
+      const key = entry.slice(0, separatorIndex).trim();
+      const value = entry.slice(separatorIndex + 1).trim();
+      if (!key || !value) return accumulator;
+
+      accumulator[key] = value;
+      return accumulator;
+    }, {});
+}
+
 function initializeGrafanaCloudOtlp() {
   if (initialized) return true;
   if (process.env.NODE_ENV !== 'production') return false;
@@ -55,11 +79,19 @@ function initializeGrafanaCloudOtlp() {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT;
   if (!endpoint) return false;
 
+  const serviceName = process.env.OTEL_SERVICE_NAME || 'cinelink-backend';
+  const resourceAttributes = {
+    'service.name': serviceName,
+    ...parseResourceAttributes(process.env.OTEL_RESOURCE_ATTRIBUTES),
+  };
+
   try {
     const exporter = new OTLPMetricExporter({
       url: endpoint,
       headers: parseHeaderString(process.env.OTEL_EXPORTER_OTLP_HEADERS),
     });
+
+    const resource = resourceFromAttributes ? resourceFromAttributes(resourceAttributes) : undefined;
 
     metricReader = new PeriodicExportingMetricReader({
       exporter,
@@ -68,6 +100,7 @@ function initializeGrafanaCloudOtlp() {
 
     metricProvider = new MeterProvider({
       readers: [metricReader],
+      resource,
     });
 
     const meter = metricProvider.getMeter('cinelink-backend');
@@ -90,6 +123,8 @@ function initializeGrafanaCloudOtlp() {
     logger.info('[otel] Grafana Cloud OTLP export enabled', {
       endpoint,
       intervalMs: Number(process.env.OTEL_METRIC_EXPORT_INTERVAL_MS || 15000),
+      serviceName,
+      resourceAttributes,
     });
 
     return true;
