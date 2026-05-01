@@ -1,6 +1,7 @@
 const { Router } = require('express');
 const promClient = require('prom-client');
 const { logger } = require('../utils/logger');
+const https = require('https');
 
 const router = Router();
 
@@ -68,12 +69,45 @@ function getGateway() {
 }
 
 async function pushMetricsToGrafana() {
-  const gw = getGateway();
-  if (!gw) return;
+  if (!GRAFANA_REMOTE_WRITE_URL || !GRAFANA_USERNAME || !GRAFANA_API_KEY) return;
 
   try {
-    await gw.pushAdd({ jobName: 'cinelink-backend' });
-    logger.info('[metrics] Pushed to Grafana Cloud OK');
+    const metricsText = await register.metrics();
+    const auth = Buffer.from(`${GRAFANA_USERNAME}:${GRAFANA_API_KEY}`).toString('base64');
+    const body = Buffer.from(metricsText, 'utf8');
+    const parsedUrl = new URL(GRAFANA_REMOTE_WRITE_URL);
+
+    const statusCode = await new Promise((resolve, reject) => {
+      const req = https.request(
+        {
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.pathname,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/openmetrics-text; version=1.0.0; charset=utf-8',
+            Authorization: `Basic ${auth}`,
+            'Content-Length': body.length,
+          },
+        },
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => {
+            if (res.statusCode >= 400) {
+              logger.warn('[metrics] Push failed', { status: res.statusCode, body: data });
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            } else {
+              resolve(res.statusCode);
+            }
+          });
+        }
+      );
+      req.on('error', reject);
+      req.write(body);
+      req.end();
+    });
+
+    logger.info('[metrics] Pushed to Grafana Cloud OK', { status: statusCode });
   } catch (err) {
     logger.warn('[metrics] Push to Grafana Cloud failed', { error: err.message });
   }
