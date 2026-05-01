@@ -17,7 +17,7 @@ const { initializeFirebase } = require('./config/firebase');
 const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
 const { warmupTmdbCaches } = require('./services/tmdb/warmup');
-// const { initializeGrafanaCloudOtlp } = require('./services/grafanaCloudOtlp');
+const { initializeGrafanaCloudPush } = require('./routes/metrics');
 
 function shouldEnableStatusMonitor() {
   if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
@@ -59,6 +59,7 @@ async function createApp() {
 
   // Initialize analytics service
   analyticsService.initialize();
+  initializeGrafanaCloudPush();
 
   try {
     const warmupResult = await warmupTmdbCaches({
@@ -129,6 +130,7 @@ async function createApp() {
   }
 
   app.disable('x-powered-by');
+  app.set('trust proxy', 1);
   app.use(helmet());
   app.use(compression());
   app.use(express.json({ limit: '1mb' }));
