@@ -63,7 +63,7 @@ async function pushMetricsToGrafana() {
       path: url.pathname,
       method: 'POST',
       headers: {
-        'Content-Type': 'text/plain',
+        'Content-Type': 'text/plain; version=0.0.4',
         Authorization: `Basic ${auth}`,
         'Content-Length': Buffer.byteLength(metrics),
       },
