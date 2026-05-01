@@ -194,30 +194,34 @@ If you'd like, I can:
 
 This is the recommended approach for monitoring your backend deployed on Render. Grafana Cloud offers a free tier and requires zero infrastructure — metrics are pushed from your Node app to hosted collectors.
 
+Important correction: the previous `GRAFANA_REMOTE_WRITE_URL` / `prom/prometheus` text-push approach is not compatible with Grafana Cloud. The OTLP path below is the supported direct-from-app option and fixes the `decompress snappy: corrupt input` error you saw.
+
 ### Step 1 — Sign up for Grafana Cloud
 
 - Go to https://grafana.com → **Start for free** → create an account.
 - You get a free stack with Prometheus remote write and hosted Grafana dashboards.
 
-### Step 2 — Get Prometheus remote write credentials
+### Step 2 — Get OTLP credentials from Grafana Cloud
 
-- In Grafana Cloud, navigate: **Home → Connections → Add new connection → Prometheus**.
-- Copy these three credentials:
-  - **Remote Write URL**: looks like `https://prometheus-prod-XX.grafana.net/api/prom/push`
-  - **Username**: a numeric ID (e.g., `12345`)
-  - **API Key**: generate one in your Grafana Cloud account
+- In Grafana Cloud, navigate: **Home → Connections → Add new connection → OpenTelemetry**.
+- Copy the connection details Grafana Cloud gives you:
+  - **OTLP Endpoint**: looks like `https://otlp-gateway-<region>.grafana.net/otlp`
+  - **Authorization header** or API token details for OTLP
+  - Any service/resource attributes Grafana Cloud suggests for your stack
 
 ### Step 3 — Deploy to Render
 
-Your app has been updated to support pushing metrics to Grafana Cloud. No new dependencies to install — `prom-client` is already included.
+Your app has been updated to support sending metrics to Grafana Cloud via OTLP. Local Prometheus metrics are still available through `/api/metrics`, but production export now uses OpenTelemetry.
 
 In your Render service → **Environment** tab, add:
 
 ```
-GRAFANA_REMOTE_WRITE_URL=https://prometheus-prod-XX.grafana.net/api/prom/push
-GRAFANA_USERNAME=12345
-GRAFANA_API_KEY=your_api_key_here
-GRAFANA_PUSH_INTERVAL_MS=15000
+OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp-gateway-<region>.grafana.net/otlp
+OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+OTEL_EXPORTER_OTLP_HEADERS=Authorization=Basic%20base64(username:api_key)
+OTEL_SERVICE_NAME=cinelink-backend
+OTEL_RESOURCE_ATTRIBUTES=deployment.environment=production,service.namespace=cinelink
+OTEL_METRIC_EXPORT_INTERVAL_MS=15000
 METRICS_SECRET=your_random_secret_string_here
 NODE_ENV=production
 ```
@@ -226,11 +230,11 @@ NODE_ENV=production
 
 - In production, the `/api/metrics` endpoint is secured with a token check. If `METRICS_SECRET` is not set, the endpoint remains open (logs a warning).
 - Set this to a strong random value (e.g., `$(openssl rand -hex 32)` or a secure password generator).
-- Only Grafana Cloud (via bearer token in env vars) will access this endpoint; you don't need to manually pass the token.
+- Grafana Cloud OTLP export does not use `/api/metrics`; that endpoint stays for local debugging and any internal scrape use only.
 
 ### Step 4 — How it works
 
-- Every `GRAFANA_PUSH_INTERVAL_MS` milliseconds (default 15 seconds), your app pushes collected metrics to Grafana Cloud via the remote write endpoint.
+- Every `OTEL_METRIC_EXPORT_INTERVAL_MS` milliseconds (default 15 seconds), your app exports collected metrics to Grafana Cloud via OTLP.
 - The `/api/metrics` endpoint still exists locally for dev/debugging but is secured in production.
 - Metrics arrive in Grafana Cloud within seconds; dashboards auto-populate from these metrics.
 - No separate Prometheus instance needed.
@@ -239,21 +243,21 @@ NODE_ENV=production
 
 - In your Grafana Cloud portal, go to **Dashboards → Import**.
 - Use dashboard ID **11159** (Node.js app) or **14171** (Express server) from grafana.com/dashboards.
-- Select your auto-created Prometheus data source.
+- Select your Grafana Cloud metrics data source (Prometheus/Mimir or Application Observability, depending on the connection tile you used).
 - Your metrics will appear within 1-2 minutes of deploying.
 
 Alternatively, import the JSON dashboard from `monitoring/grafana_cinelink_dashboard.json` if you prefer custom queries tailored to CineLink's metrics.
 
 ### Step 6 — Verify metrics are flowing
 
-- In Grafana Cloud → **Explore**, select your Prometheus data source.
+- In Grafana Cloud → **Explore**, select the data source created by the OpenTelemetry connection tile.
 - Query one of your metrics (e.g., `http_requests_total{job="cinelink-backend"}`).
 - You should see data points appearing.
 
 If no data:
 
-- Check app logs on Render for any errors during push (search for `[metrics] Push to Grafana`).
-- Confirm `GRAFANA_REMOTE_WRITE_URL`, `GRAFANA_USERNAME`, and `GRAFANA_API_KEY` are correct.
+- Check app logs on Render for any errors during export (search for `[otel]`).
+- Confirm `OTEL_EXPORTER_OTLP_ENDPOINT` and `OTEL_EXPORTER_OTLP_HEADERS` are correct.
 - Ensure your app is handling traffic so metrics are being recorded.
 
 ### Step 7 — Secure the metrics endpoint (optional but recommended)
@@ -261,14 +265,14 @@ If no data:
 In production, only allow requests with the `METRICS_SECRET`:
 
 ```bash
-curl -H "X-Metrics-Token: your_random_secret_string_here" https://your-render-service.onrender.com/api/metrics
+  curl -H "X-Metrics-Token: your_random_secret_string_here" https://your-render-service.onrender.com/api/metrics
 ```
 
 This is already enforced in the code if `METRICS_SECRET` is set and `NODE_ENV=production`.
 
 ### Comparison with local Prometheus setup
 
-| Feature        | Local Docker Compose   | Grafana Cloud                |
+| Feature        | Local Docker Compose   | Grafana Cloud OTLP           |
 | -------------- | ---------------------- | ---------------------------- |
 | Infrastructure | Docker on your machine | Hosted (managed)             |
 | Costs          | Free (local)           | Free tier with limits        |

@@ -17,7 +17,7 @@ const { initializeFirebase } = require('./config/firebase');
 const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
 const { warmupTmdbCaches } = require('./services/tmdb/warmup');
-const { initializeGrafanaCloudPush } = require('./routes/metrics');
+const { initializeGrafanaCloudOtlp } = require('./services/grafanaCloudOtlp');
 
 function shouldEnableStatusMonitor() {
   if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
@@ -163,9 +163,9 @@ async function createApp() {
   app.use(analyticsMiddleware);
   app.use(globalLimiter);
 
-  // Initialize Grafana Cloud push (only in production)
+  // Initialize Grafana Cloud OTLP export (only in production)
   if (env.NODE_ENV === 'production') {
-    initializeGrafanaCloudPush();
+    initializeGrafanaCloudOtlp();
   }
 
   app.use(env.API_PREFIX, routes);
