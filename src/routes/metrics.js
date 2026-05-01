@@ -77,8 +77,10 @@ async function pushMetricsToGrafana() {
         });
         res.on('end', () => {
           if (res.statusCode >= 400) {
+            logger.warn('[metrics] Push failed', { status: res.statusCode, body: data });
             reject(new Error(`Push failed with status ${res.statusCode}: ${data}`));
           } else {
+            logger.info('[metrics] Pushed to Grafana Cloud OK', { status: res.statusCode });
             resolve();
           }
         });
@@ -88,7 +90,7 @@ async function pushMetricsToGrafana() {
       req.end();
     });
 
-    logger.debug('[metrics] Successfully pushed metrics to Grafana Cloud');
+    logger.info('[metrics] Pushed to Grafana Cloud', { status: res.statusCode });
   } catch (err) {
     logger.warn('[metrics] Push to Grafana Cloud failed:', { error: err.message });
   }

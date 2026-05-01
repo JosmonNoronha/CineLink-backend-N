@@ -3,7 +3,7 @@ const { LRUCache } = require('lru-cache');
 const { getRedisClient, isRedisReady, markRedisUnavailable } = require('../../config/redis');
 const { logger } = require('../../utils/logger');
 const { cacheHitRate, cacheMissRate } = require('../../routes/metrics');
-const { recordCacheHit, recordCacheMiss } = require('../grafanaCloudOtlp');
+// const { recordCacheHit, recordCacheMiss } = require('../grafanaCloudOtlp');
 
 const MAX_MEMORY_ITEMS = 500;
 const MAX_MEMORY_BYTES = 50 * 1024 * 1024;
@@ -37,11 +37,11 @@ async function cacheGet(key) {
         const val = await redis.get(h);
         if (val !== null && val !== undefined) {
           cacheHitRate.inc({ cache_type: 'redis' });
-          recordCacheHit('redis');
+          // recordCacheHit('redis');
           return JSON.parse(val);
         }
         cacheMissRate.inc({ cache_type: 'redis' });
-        recordCacheMiss('redis');
+        // recordCacheMiss('redis');
         return null;
       }
     } catch (err) {
@@ -53,10 +53,10 @@ async function cacheGet(key) {
   const entry = memory.get(h);
   if (entry) {
     cacheHitRate.inc({ cache_type: 'memory' });
-    recordCacheHit('memory');
+    // recordCacheHit('memory');
   } else {
     cacheMissRate.inc({ cache_type: 'memory' });
-    recordCacheMiss('memory');
+    // recordCacheMiss('memory');
   }
   return entry ?? null;
 }

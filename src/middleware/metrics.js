@@ -3,7 +3,6 @@ const { metrics } = require('../services/analytics');
 const { logger } = require('../utils/logger');
 const { isRedisReady } = require('../config/redis');
 const { httpRequestDuration, httpRequestTotal } = require('../routes/metrics');
-const { recordHttpRequest } = require('../services/grafanaCloudOtlp');
 
 /**
  * Middleware to track API performance metrics
@@ -30,12 +29,6 @@ function createMetricsMiddleware() {
         status_code: statusCode,
       });
 
-      recordHttpRequest({
-        method: req.method,
-        route: routeLabel,
-        statusCode,
-        durationSeconds,
-      });
     } catch (error) {
       logger.debug('Prometheus metrics tracking failed', { error: error.message });
     }
