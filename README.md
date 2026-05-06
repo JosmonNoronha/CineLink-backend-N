@@ -32,6 +32,14 @@ Supported options (pick one):
 Send Firebase ID token:
 `Authorization: Bearer <id-token>`
 
+## API boundaries
+
+- `/api/user/*` requires Firebase auth and is the protected user-data surface.
+- `/api/analytics/*` uses optional auth; the endpoints return aggregate data and do not require a token.
+- `/api/recommendations` stays public because it is content-based, not user-scoped.
+- `/api/metrics` is protected by a separate production-only metrics secret.
+- Legacy watchlist routes under `/api/user/watchlists/:name/movies/*` remain supported for compatibility, but `/api/user/watchlists/:name/items/*` is the canonical TMDB-based path.
+
 ## Health
 
 `GET /api/health`

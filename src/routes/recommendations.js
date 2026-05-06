@@ -9,27 +9,56 @@ const { tmdbConfig } = require('../config/tmdb');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const axios = require('axios');
+const { optionalAuth } = require('../middleware/auth');
 
 const router = Router();
 
-// NOTE: This endpoint is intentionally unauthenticated since the mobile app
-// already sends Firebase tokens via interceptor, but recommendations are not user-specific.
+// Recommendations endpoint: public for content-based requests, but
+// when client asks for `personalize: true` the request requires authentication.
 router.post(
   '/',
+  optionalAuth,
   validate({
     body: Joi.alternatives().try(
       Joi.object({
         media_type: Joi.string().valid('movie', 'tv').required(),
         tmdb_id: Joi.number().integer().min(1).required(),
         page: Joi.number().integer().min(1).default(1),
+        personalize: Joi.boolean().optional(),
       }),
       Joi.object({
         title: Joi.string().trim().min(1).max(200).required(),
         top_n: Joi.number().integer().min(1).max(20).default(10),
+        personalize: Joi.boolean().optional(),
       })
     ),
   }),
   async (req, res) => {
+    // Log auth state for recommendations requests
+    const authState = req.user ? `authenticated (uid: ${req.user.uid})` : 'unauthenticated';
+    const personalize = req.body.personalize ? ' [personalize=true]' : ' [personalize=false]';
+    logger.info(`📌 Recommendations request: ${authState}${personalize}`);
+
+    // If client requests personalization enforce authentication
+    if (req.body.personalize) {
+      if (!req.user) {
+        logger.warn(`🔒 Personalization denied: no auth provided`);
+        return res.status(401).json({
+          success: false,
+          error: {
+            code: 'UNAUTHORIZED',
+            message: 'Personalized recommendations require authentication',
+            userMessage: 'Authentication required for personalized recommendations',
+            retryable: false,
+          },
+        });
+      }
+      logger.info(`✅ Personalization granted for uid: ${req.user.uid}`);
+      // Note: personalization algorithm not yet implemented. For now,
+      // authenticated requests are allowed and will fall back to the
+      // existing TMDB content-based recommendations. Future work: call
+      // a personalized recommendation service using `req.user.uid`.
+    }
     if (req.body.title) {
       // Legacy mode: return list compatible with existing app
       const topN = req.body.top_n || 10;

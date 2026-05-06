@@ -23,4 +23,12 @@ const gamificationActionLimiter = rateLimit({
   keyGenerator: (req) => req?.user?.uid || req.ip,
 });
 
-module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter };
+const batchDetailsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req?.user?.uid || req.ip,
+});
+
+module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter, batchDetailsLimiter };

@@ -6,6 +6,7 @@ const { validate } = require('../middleware/validator');
 const { schemas } = require('../utils/validators');
 const { AppError } = require('../utils/errors');
 const { gamificationActionLimiter } = require('../middleware/rateLimiter');
+const { logger } = require('../utils/logger');
 const profileService = require('../services/user/profile');
 const favoritesService = require('../services/user/favorites');
 const watchlistsService = require('../services/user/watchlists');
@@ -21,6 +22,14 @@ function requireIdempotencyKey(req) {
     throw new AppError('Missing or invalid X-Idempotency-Key header', 400, 'VALIDATION_ERROR');
   }
   return normalized;
+}
+
+function logLegacyWatchlistRoute(req, _res, next) {
+  logger.warn('Legacy watchlist route used; prefer /watchlists/:name/items', {
+    method: req.method,
+    path: req.originalUrl,
+  });
+  return next();
 }
 
 router.use(authMiddleware);
@@ -98,6 +107,7 @@ router.post('/watchlists', validate({ body: schemas.watchlistCreate }), async (r
 // Legacy: add a movie object to a watchlist (current app expects this)
 router.post(
   '/watchlists/:name/movies',
+  logLegacyWatchlistRoute,
   validate({
     params: Joi.object({ name: Joi.string().trim().min(1).max(100).required() }),
     body: Joi.object({ movie: schemas.omdbMovie.required() }),
@@ -111,6 +121,7 @@ router.post(
 // Legacy: toggle watched by imdbID
 router.patch(
   '/watchlists/:name/movies/:imdbID/watched',
+  logLegacyWatchlistRoute,
   validate({
     params: Joi.object({
       name: Joi.string().trim().min(1).max(100).required(),
@@ -130,6 +141,7 @@ router.patch(
 // Legacy: remove a movie by imdbID (supports tt* and tmdb:*)
 router.delete(
   '/watchlists/:name/movies/:imdbID',
+  logLegacyWatchlistRoute,
   validate({
     params: Joi.object({
       name: Joi.string().trim().min(1).max(100).required(),
@@ -235,12 +247,9 @@ router.post(
   }),
   async (req, res) => {
     const idempotencyKey = requireIdempotencyKey(req);
-    const data = await gamificationService.recordWatch(
-      req.user.uid,
-      req.body.movieId,
-      req.body.listName,
-      { idempotencyKey }
-    );
+    const data = await gamificationService.recordWatch(req.user.uid, req.body.movieId, req.body.listName, {
+      idempotencyKey,
+    });
     return ok(res, data);
   }
 );

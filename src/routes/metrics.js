@@ -53,7 +53,9 @@ function parsePrometheusText(text) {
     if (!trimmed || trimmed.startsWith('#')) continue;
 
     // Match: metric_name{labels} value [timestamp]
-    const match = trimmed.match(/^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?([^}]*)\}?\s+([\d.eE+\-]+|NaN|[+-]?Inf)(\s+\d+)?$/);
+    const match = trimmed.match(
+      /^([a-zA-Z_:][a-zA-Z0-9_:]*)\{?([^}]*)\}?\s+([\d.eE+-]+|NaN|[+-]?Inf)(\s+\d+)?$/
+    );
     if (!match) continue;
 
     const metricName = match[1];
@@ -179,29 +181,32 @@ async function pushMetricsToGrafana() {
     const parsedUrl = new URL(GRAFANA_REMOTE_WRITE_URL);
 
     const statusCode = await new Promise((resolve, reject) => {
-      const req = https.request({
-        hostname: parsedUrl.hostname,
-        path: parsedUrl.pathname,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-protobuf',
-          'Content-Encoding': 'snappy',
-          'X-Prometheus-Remote-Write-Version': '0.1.0',
-          'Authorization': `Basic ${auth}`,
-          'Content-Length': compressed.length,
+      const req = https.request(
+        {
+          hostname: parsedUrl.hostname,
+          path: parsedUrl.pathname,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-protobuf',
+            'Content-Encoding': 'snappy',
+            'X-Prometheus-Remote-Write-Version': '0.1.0',
+            Authorization: `Basic ${auth}`,
+            'Content-Length': compressed.length,
+          },
         },
-      }, (res) => {
-        let data = '';
-        res.on('data', chunk => data += chunk);
-        res.on('end', () => {
-          if (res.statusCode >= 400) {
-            logger.warn('[metrics] Push failed', { status: res.statusCode, body: data });
-            reject(new Error(`HTTP ${res.statusCode}: ${data}`));
-          } else {
-            resolve(res.statusCode);
-          }
-        });
-      });
+        (res) => {
+          let data = '';
+          res.on('data', (chunk) => (data += chunk));
+          res.on('end', () => {
+            if (res.statusCode >= 400) {
+              logger.warn('[metrics] Push failed', { status: res.statusCode, body: data });
+              reject(new Error(`HTTP ${res.statusCode}: ${data}`));
+            } else {
+              resolve(res.statusCode);
+            }
+          });
+        }
+      );
       req.on('error', reject);
       req.write(compressed);
       req.end();
@@ -228,8 +233,8 @@ function metricsSecurityMiddleware(req, res, next) {
 
   const providedSecret = req.headers['x-metrics-token'] || req.headers['authorization'];
   if (!METRICS_SECRET) {
-    logger.warn('[metrics] METRICS_SECRET not configured in production - metrics endpoint is open');
-    return next();
+    logger.error('[metrics] METRICS_SECRET not configured in production');
+    return res.status(503).json({ error: 'Metrics endpoint not configured' });
   }
   if (providedSecret !== METRICS_SECRET) {
     return res.status(403).json({ error: 'Forbidden' });

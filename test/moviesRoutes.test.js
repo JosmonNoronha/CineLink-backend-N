@@ -117,6 +117,22 @@ describe('movies routes', () => {
     expect(res.body.data.results[1].error).toBe('resolve failed');
   });
 
+  test('batch-details applies its own rate limit before the global limiter', async () => {
+    mockCompat.resolveToTmdb.mockResolvedValue({ media_type: 'movie', tmdb_id: 603, imdb_id: 'tt0133093' });
+    mockCompat.movieDetailsOmdbLike.mockResolvedValue({ Title: 'The Matrix' });
+
+    const app = buildApp();
+    let lastRes;
+    for (let index = 0; index < 16; index += 1) {
+      lastRes = await request(app)
+        .post('/api/movies/batch-details')
+        .send({ imdbIDs: ['tt0133093'] });
+      if (lastRes.status === 429) break;
+    }
+
+    expect(lastRes.status).toBe(429);
+  });
+
   test.each([
     ['/popular?page=1', 'listPopular', [1]],
     ['/top-rated?page=1', 'listTopRated', [1]],

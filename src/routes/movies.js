@@ -2,6 +2,7 @@ const { Router } = require('express');
 const Joi = require('joi');
 const { ok } = require('../utils/helpers');
 const { validate } = require('../middleware/validator');
+const { batchDetailsLimiter } = require('../middleware/rateLimiter');
 const movieService = require('../services/tmdb/movies');
 const reviewService = require('../services/tmdb/reviews');
 const compat = require('../services/tmdb/compat');
@@ -99,6 +100,7 @@ router.get(
 
 router.post(
   '/batch-details',
+  batchDetailsLimiter,
   validate({
     body: Joi.object({ imdbIDs: Joi.array().items(Joi.string().trim().min(1)).min(1).max(50).required() }),
   }),

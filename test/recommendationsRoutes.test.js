@@ -15,6 +15,17 @@ jest.mock('../src/services/tmdb/client', () => ({ tmdbGet: (...args) => mockTmdb
 jest.mock('../src/services/tmdb/genres', () => ({ getGenreMap: (...args) => mockGetGenreMap(...args) }));
 jest.mock('axios', () => ({ post: (...args) => mockAxiosPost(...args) }));
 jest.mock('../src/utils/logger', () => ({ logger: { error: (...args) => mockLoggerError(...args) } }));
+// Mock optionalAuth to avoid Firebase calls during tests. If the
+// Authorization header equals 'Bearer valid-token' we'll populate `req.user`.
+jest.mock('../src/middleware/auth', () => ({
+  optionalAuth: (req, _res, next) => {
+    const header = req.headers.authorization || '';
+    if (header === 'Bearer valid-token') {
+      req.user = { uid: 'test-user-1', email: 'test@example.com' };
+    }
+    return next();
+  },
+}));
 
 const router = require('../src/routes/recommendations');
 
@@ -118,5 +129,29 @@ describe('recommendations routes', () => {
     expect(res.status).toBe(503);
     expect(res.body.success).toBe(false);
     expect(mockLoggerError).toHaveBeenCalled();
+  });
+
+  test('POST / with personalize=true without auth returns 401', async () => {
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/recommendations')
+      .send({ media_type: 'movie', tmdb_id: 603, personalize: true });
+    if (res.status !== 401) console.log('DEBUG response body:', res.status, res.body);
+    expect(res.status).toBe(401);
+    expect(res.body.success).toBe(false);
+    expect(res.body.error).toBeDefined();
+  });
+
+  test('POST / with personalize=true and valid token returns 200', async () => {
+    mockRecoService.getRecommendations.mockResolvedValueOnce({ data: { results: [] }, source: 'tmdb' });
+
+    const app = buildApp();
+    const res = await request(app)
+      .post('/api/recommendations')
+      .set('Authorization', 'Bearer valid-token')
+      .send({ media_type: 'movie', tmdb_id: 603, personalize: true });
+
+    expect(res.status).toBe(200);
+    expect(mockRecoService.getRecommendations).toHaveBeenCalled();
   });
 });
