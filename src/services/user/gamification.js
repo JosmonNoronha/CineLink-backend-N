@@ -27,26 +27,146 @@ const LEVELS = [
 ];
 
 const ACHIEVEMENTS = [
-  { id: 'first_watch', title: 'First Watch', desc: 'Mark your first title as watched', icon: 'eye-outline', condition: (s) => s.totalWatched >= 1 },
-  { id: 'five_watched', title: 'Popcorn Time', desc: 'Watch 5 movies or shows', icon: 'film-outline', condition: (s) => s.totalWatched >= 5 },
-  { id: 'ten_watched', title: 'Movie Marathon', desc: 'Watch 10 titles', icon: 'play-circle-outline', condition: (s) => s.totalWatched >= 10 },
-  { id: 'twentyfive_watched', title: 'Binge Master', desc: 'Watch 25 titles', icon: 'tv-outline', condition: (s) => s.totalWatched >= 25 },
-  { id: 'fifty_watched', title: 'Half Century', desc: 'Watch 50 titles', icon: 'medal-outline', condition: (s) => s.totalWatched >= 50 },
-  { id: 'hundred_watched', title: 'Centurion', desc: 'Watch 100 titles', icon: 'trophy-outline', condition: (s) => s.totalWatched >= 100 },
-  { id: 'first_list', title: 'Organizer', desc: 'Create your first watchlist', icon: 'list-outline', condition: (s) => s.listsCreated >= 1 },
-  { id: 'three_lists', title: 'Curator', desc: 'Create 3 watchlists', icon: 'layers-outline', condition: (s) => s.listsCreated >= 3 },
-  { id: 'five_lists', title: 'Archivist', desc: 'Create 5 watchlists', icon: 'library-outline', condition: (s) => s.listsCreated >= 5 },
-  { id: 'first_complete', title: 'Completionist', desc: 'Complete your first watchlist', icon: 'checkmark-circle-outline', condition: (s) => s.listsCompleted >= 1 },
-  { id: 'three_complete', title: 'Perfectionist', desc: 'Complete 3 watchlists', icon: 'ribbon-outline', condition: (s) => s.listsCompleted >= 3 },
-  { id: 'five_complete', title: 'Overclocker', desc: 'Complete 5 watchlists', icon: 'flash-outline', condition: (s) => s.listsCompleted >= 5 },
-  { id: 'streak_3', title: 'On a Roll', desc: '3-day watch streak', icon: 'flame-outline', condition: (s) => s.bestStreak >= 3 },
-  { id: 'streak_7', title: 'Week Warrior', desc: '7-day watch streak', icon: 'thunderstorm-outline', condition: (s) => s.bestStreak >= 7 },
-  { id: 'streak_14', title: 'Unstoppable', desc: '14-day watch streak', icon: 'barbell-outline', condition: (s) => s.bestStreak >= 14 },
-  { id: 'streak_30', title: 'Cinematic Life', desc: '30-day watch streak', icon: 'moon-outline', condition: (s) => s.bestStreak >= 30 },
-  { id: 'daily_double', title: 'Double Feature', desc: 'Watch 2 titles in a single day', icon: 'albums-outline', condition: (s) => Object.values(s.dailyWatchCounts || {}).some((c) => c >= 2) },
-  { id: 'triple_feature', title: 'Triple Feature', desc: 'Watch 3 titles in a single day', icon: 'grid-outline', condition: (s) => Object.values(s.dailyWatchCounts || {}).some((c) => c >= 3) },
-  { id: 'weekly_binge', title: 'Weekend Warrior', desc: 'Watch 5 titles in a single week', icon: 'calendar-outline', condition: (s) => Object.values(s.weeklyWatchCounts || {}).some((c) => c >= 5) },
-  { id: 'weekly_marathon', title: 'Non-Stop', desc: 'Watch 10 titles in a single week', icon: 'rocket-outline', condition: (s) => Object.values(s.weeklyWatchCounts || {}).some((c) => c >= 10) },
+  {
+    id: 'first_watch',
+    title: 'First Watch',
+    desc: 'Mark your first title as watched',
+    icon: 'eye-outline',
+    condition: (s) => s.totalWatched >= 1,
+  },
+  {
+    id: 'five_watched',
+    title: 'Popcorn Time',
+    desc: 'Watch 5 movies or shows',
+    icon: 'film-outline',
+    condition: (s) => s.totalWatched >= 5,
+  },
+  {
+    id: 'ten_watched',
+    title: 'Movie Marathon',
+    desc: 'Watch 10 titles',
+    icon: 'play-circle-outline',
+    condition: (s) => s.totalWatched >= 10,
+  },
+  {
+    id: 'twentyfive_watched',
+    title: 'Binge Master',
+    desc: 'Watch 25 titles',
+    icon: 'tv-outline',
+    condition: (s) => s.totalWatched >= 25,
+  },
+  {
+    id: 'fifty_watched',
+    title: 'Half Century',
+    desc: 'Watch 50 titles',
+    icon: 'medal-outline',
+    condition: (s) => s.totalWatched >= 50,
+  },
+  {
+    id: 'hundred_watched',
+    title: 'Centurion',
+    desc: 'Watch 100 titles',
+    icon: 'trophy-outline',
+    condition: (s) => s.totalWatched >= 100,
+  },
+  {
+    id: 'first_list',
+    title: 'Organizer',
+    desc: 'Create your first watchlist',
+    icon: 'list-outline',
+    condition: (s) => s.listsCreated >= 1,
+  },
+  {
+    id: 'three_lists',
+    title: 'Curator',
+    desc: 'Create 3 watchlists',
+    icon: 'layers-outline',
+    condition: (s) => s.listsCreated >= 3,
+  },
+  {
+    id: 'five_lists',
+    title: 'Archivist',
+    desc: 'Create 5 watchlists',
+    icon: 'library-outline',
+    condition: (s) => s.listsCreated >= 5,
+  },
+  {
+    id: 'first_complete',
+    title: 'Completionist',
+    desc: 'Complete your first watchlist',
+    icon: 'checkmark-circle-outline',
+    condition: (s) => s.listsCompleted >= 1,
+  },
+  {
+    id: 'three_complete',
+    title: 'Perfectionist',
+    desc: 'Complete 3 watchlists',
+    icon: 'ribbon-outline',
+    condition: (s) => s.listsCompleted >= 3,
+  },
+  {
+    id: 'five_complete',
+    title: 'Overclocker',
+    desc: 'Complete 5 watchlists',
+    icon: 'flash-outline',
+    condition: (s) => s.listsCompleted >= 5,
+  },
+  {
+    id: 'streak_3',
+    title: 'On a Roll',
+    desc: '3-day watch streak',
+    icon: 'flame-outline',
+    condition: (s) => s.bestStreak >= 3,
+  },
+  {
+    id: 'streak_7',
+    title: 'Week Warrior',
+    desc: '7-day watch streak',
+    icon: 'thunderstorm-outline',
+    condition: (s) => s.bestStreak >= 7,
+  },
+  {
+    id: 'streak_14',
+    title: 'Unstoppable',
+    desc: '14-day watch streak',
+    icon: 'barbell-outline',
+    condition: (s) => s.bestStreak >= 14,
+  },
+  {
+    id: 'streak_30',
+    title: 'Cinematic Life',
+    desc: '30-day watch streak',
+    icon: 'moon-outline',
+    condition: (s) => s.bestStreak >= 30,
+  },
+  {
+    id: 'daily_double',
+    title: 'Double Feature',
+    desc: 'Watch 2 titles in a single day',
+    icon: 'albums-outline',
+    condition: (s) => Object.values(s.dailyWatchCounts || {}).some((c) => c >= 2),
+  },
+  {
+    id: 'triple_feature',
+    title: 'Triple Feature',
+    desc: 'Watch 3 titles in a single day',
+    icon: 'grid-outline',
+    condition: (s) => Object.values(s.dailyWatchCounts || {}).some((c) => c >= 3),
+  },
+  {
+    id: 'weekly_binge',
+    title: 'Weekend Warrior',
+    desc: 'Watch 5 titles in a single week',
+    icon: 'calendar-outline',
+    condition: (s) => Object.values(s.weeklyWatchCounts || {}).some((c) => c >= 5),
+  },
+  {
+    id: 'weekly_marathon',
+    title: 'Non-Stop',
+    desc: 'Watch 10 titles in a single week',
+    icon: 'rocket-outline',
+    condition: (s) => Object.values(s.weeklyWatchCounts || {}).some((c) => c >= 10),
+  },
 ];
 
 const ACHIEVEMENT_BY_ID = new Map(ACHIEVEMENTS.map((a) => [a.id, a]));
@@ -91,7 +211,9 @@ function sanitizeIdempotencyKey(key) {
 }
 
 function normalizeKey(value) {
-  return String(value || '').trim().toLowerCase();
+  return String(value || '')
+    .trim()
+    .toLowerCase();
 }
 
 function uniqStrings(values, maxLen) {
@@ -293,67 +415,69 @@ async function recordWatch(uid, movieId, listName) {
     throw new AppError('listName is required', 400, 'VALIDATION_ERROR');
   }
 
-  return mutateGamification(uid, async (state, ctx) => {
-    const listSnap = await ctx.tx.get(watchlistDocRef(uid, normalizedListName));
-    if (!listSnap.exists) {
-      throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
-    }
+  return mutateGamification(
+    uid,
+    async (state, ctx) => {
+      const listSnap = await ctx.tx.get(watchlistDocRef(uid, normalizedListName));
+      if (!listSnap.exists) {
+        throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
+      }
 
-    const listData = listSnap.data() || {};
-    const movies = Array.isArray(listData.movies) ? listData.movies : [];
-    const matchingMovie = movies.find(
-      (m) => String(m?.imdbID || '').trim() === normalizedMovieId
-    );
+      const listData = listSnap.data() || {};
+      const movies = Array.isArray(listData.movies) ? listData.movies : [];
+      const matchingMovie = movies.find((m) => String(m?.imdbID || '').trim() === normalizedMovieId);
 
-    if (!matchingMovie || !matchingMovie.watched) {
-      throw new AppError(
-        'Movie must be marked watched in the specified list before awarding XP',
-        409,
-        'WATCH_NOT_ELIGIBLE'
-      );
-    }
+      if (!matchingMovie || !matchingMovie.watched) {
+        throw new AppError(
+          'Movie must be marked watched in the specified list before awarding XP',
+          409,
+          'WATCH_NOT_ELIGIBLE'
+        );
+      }
 
-    if (state.watchedMovieIds.includes(normalizedMovieId)) {
+      if (state.watchedMovieIds.includes(normalizedMovieId)) {
+        return {
+          state,
+          xpGained: 0,
+          canEarnXp: false,
+          alreadyRewarded: true,
+          newAchievements: [],
+        };
+      }
+
+      state.watchedMovieIds = [...state.watchedMovieIds, normalizedMovieId];
+      state.totalWatched += 1;
+
+      const today = getTodayUTC();
+      const weekKey = getWeekKeyUTC();
+      state.dailyWatchCounts = {
+        ...state.dailyWatchCounts,
+        [today]: (state.dailyWatchCounts[today] || 0) + 1,
+      };
+      state.weeklyWatchCounts = {
+        ...state.weeklyWatchCounts,
+        [weekKey]: (state.weeklyWatchCounts[weekKey] || 0) + 1,
+      };
+
+      const streakState = updateStreak(state);
+      Object.assign(state, streakState);
+
+      const streakBonus = state.currentStreak > 1 ? (state.currentStreak - 1) * XP_STREAK_BONUS : 0;
+      const xpGained = XP_PER_WATCH + streakBonus;
+      state.xp += xpGained;
+
+      const newAchievements = evaluateAchievements(state);
+
       return {
         state,
-        xpGained: 0,
-        canEarnXp: false,
-        alreadyRewarded: true,
-        newAchievements: [],
+        xpGained,
+        canEarnXp: true,
+        alreadyRewarded: false,
+        newAchievements,
       };
-    }
-
-    state.watchedMovieIds = [...state.watchedMovieIds, normalizedMovieId];
-    state.totalWatched += 1;
-
-    const today = getTodayUTC();
-    const weekKey = getWeekKeyUTC();
-    state.dailyWatchCounts = {
-      ...state.dailyWatchCounts,
-      [today]: (state.dailyWatchCounts[today] || 0) + 1,
-    };
-    state.weeklyWatchCounts = {
-      ...state.weeklyWatchCounts,
-      [weekKey]: (state.weeklyWatchCounts[weekKey] || 0) + 1,
-    };
-
-    const streakState = updateStreak(state);
-    Object.assign(state, streakState);
-
-    const streakBonus = state.currentStreak > 1 ? (state.currentStreak - 1) * XP_STREAK_BONUS : 0;
-    const xpGained = XP_PER_WATCH + streakBonus;
-    state.xp += xpGained;
-
-    const newAchievements = evaluateAchievements(state);
-
-    return {
-      state,
-      xpGained,
-      canEarnXp: true,
-      alreadyRewarded: false,
-      newAchievements,
-    };
-  }, { actionType: 'watch', idempotencyKey: options.idempotencyKey });
+    },
+    { actionType: 'watch', idempotencyKey: options.idempotencyKey }
+  );
 }
 
 async function recordListCreated(uid, listName) {
@@ -364,44 +488,48 @@ async function recordListCreated(uid, listName) {
     throw new AppError('listName is required', 400, 'VALIDATION_ERROR');
   }
 
-  return mutateGamification(uid, async (state, ctx) => {
-    const listSnap = await ctx.tx.get(watchlistDocRef(uid, originalName));
-    if (!listSnap.exists) {
-      throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
-    }
+  return mutateGamification(
+    uid,
+    async (state, ctx) => {
+      const listSnap = await ctx.tx.get(watchlistDocRef(uid, originalName));
+      if (!listSnap.exists) {
+        throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
+      }
 
-    if (state.rewardedCreatedListNames.includes(normalized)) {
+      if (state.rewardedCreatedListNames.includes(normalized)) {
+        return {
+          state,
+          xpGained: 0,
+          alreadyRewarded: true,
+          newAchievements: [],
+        };
+      }
+
+      if (state.rewardedCreatedListNames.length >= MAX_REWARDED_LIST_CREATES) {
+        return {
+          state,
+          xpGained: 0,
+          alreadyRewarded: true,
+          rewardCapReached: true,
+          newAchievements: [],
+        };
+      }
+
+      state.rewardedCreatedListNames = [...state.rewardedCreatedListNames, normalized];
+      state.listsCreated = Math.max(state.listsCreated, state.rewardedCreatedListNames.length);
+      state.xp += XP_PER_LIST_CREATE;
+
+      const newAchievements = evaluateAchievements(state);
+
       return {
         state,
-        xpGained: 0,
-        alreadyRewarded: true,
-        newAchievements: [],
+        xpGained: XP_PER_LIST_CREATE,
+        alreadyRewarded: false,
+        newAchievements,
       };
-    }
-
-    if (state.rewardedCreatedListNames.length >= MAX_REWARDED_LIST_CREATES) {
-      return {
-        state,
-        xpGained: 0,
-        alreadyRewarded: true,
-        rewardCapReached: true,
-        newAchievements: [],
-      };
-    }
-
-    state.rewardedCreatedListNames = [...state.rewardedCreatedListNames, normalized];
-    state.listsCreated = Math.max(state.listsCreated, state.rewardedCreatedListNames.length);
-    state.xp += XP_PER_LIST_CREATE;
-
-    const newAchievements = evaluateAchievements(state);
-
-    return {
-      state,
-      xpGained: XP_PER_LIST_CREATE,
-      alreadyRewarded: false,
-      newAchievements,
-    };
-  }, { actionType: 'list-created', idempotencyKey: options.idempotencyKey });
+    },
+    { actionType: 'list-created', idempotencyKey: options.idempotencyKey }
+  );
 }
 
 async function recordListCompleted(uid, listName) {
@@ -412,52 +540,56 @@ async function recordListCompleted(uid, listName) {
     throw new AppError('listName is required', 400, 'VALIDATION_ERROR');
   }
 
-  return mutateGamification(uid, async (state, ctx) => {
-    const listSnap = await ctx.tx.get(watchlistDocRef(uid, originalName));
-    if (!listSnap.exists) {
+  return mutateGamification(
+    uid,
+    async (state, ctx) => {
+      const listSnap = await ctx.tx.get(watchlistDocRef(uid, originalName));
+      if (!listSnap.exists) {
+        return {
+          state,
+          xpGained: 0,
+          alreadyCompleted: true,
+          newAchievements: [],
+        };
+      }
+
+      const listData = listSnap.data() || {};
+      const movies = Array.isArray(listData.movies) ? listData.movies : [];
+      const allWatched = movies.length > 0 && movies.every((m) => !!m?.watched);
+
+      if (!allWatched) {
+        return {
+          state,
+          xpGained: 0,
+          alreadyCompleted: true,
+          newAchievements: [],
+        };
+      }
+
+      if (state.completedListNames.includes(normalized)) {
+        return {
+          state,
+          xpGained: 0,
+          alreadyCompleted: true,
+          newAchievements: [],
+        };
+      }
+
+      state.completedListNames = [...state.completedListNames, normalized];
+      state.listsCompleted = Math.max(state.listsCompleted, state.completedListNames.length);
+      state.xp += XP_PER_LIST_COMPLETE;
+
+      const newAchievements = evaluateAchievements(state);
+
       return {
         state,
-        xpGained: 0,
-        alreadyCompleted: true,
-        newAchievements: [],
+        xpGained: XP_PER_LIST_COMPLETE,
+        alreadyCompleted: false,
+        newAchievements,
       };
-    }
-
-    const listData = listSnap.data() || {};
-    const movies = Array.isArray(listData.movies) ? listData.movies : [];
-    const allWatched = movies.length > 0 && movies.every((m) => !!m?.watched);
-
-    if (!allWatched) {
-      return {
-        state,
-        xpGained: 0,
-        alreadyCompleted: true,
-        newAchievements: [],
-      };
-    }
-
-    if (state.completedListNames.includes(normalized)) {
-      return {
-        state,
-        xpGained: 0,
-        alreadyCompleted: true,
-        newAchievements: [],
-      };
-    }
-
-    state.completedListNames = [...state.completedListNames, normalized];
-    state.listsCompleted = Math.max(state.listsCompleted, state.completedListNames.length);
-    state.xp += XP_PER_LIST_COMPLETE;
-
-    const newAchievements = evaluateAchievements(state);
-
-    return {
-      state,
-      xpGained: XP_PER_LIST_COMPLETE,
-      alreadyCompleted: false,
-      newAchievements,
-    };
-  }, { actionType: 'list-completed', idempotencyKey: options.idempotencyKey });
+    },
+    { actionType: 'list-completed', idempotencyKey: options.idempotencyKey }
+  );
 }
 
 function movieIdFromWatchlistItem(movie) {
