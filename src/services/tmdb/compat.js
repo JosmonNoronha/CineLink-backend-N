@@ -137,6 +137,16 @@ async function movieDetailsOmdbLike({ tmdb_id, imdb_id }) {
     imdbVotes: movie.vote_count ? String(movie.vote_count) : 'N/A',
     imdbID: imdbId || `tmdb:movie:${tmdb_id}`,
     Type: 'movie',
+    // NEW — carries the franchise/collection this movie belongs to, if any.
+    // null when the movie isn't part of a collection.
+    _collection: movie.belongs_to_collection
+      ? {
+          id: movie.belongs_to_collection.id,
+          name: movie.belongs_to_collection.name || null,
+          poster_path: movie.belongs_to_collection.poster_path || null,
+          backdrop_path: movie.belongs_to_collection.backdrop_path || null,
+        }
+      : null,
   };
 }
 

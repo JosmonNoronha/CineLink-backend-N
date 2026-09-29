@@ -228,4 +228,13 @@ router.get(
   }
 );
 
+router.get(
+  '/collection/:id',
+  validate({ params: Joi.object({ id: Joi.number().integer().min(1).required() }) }),
+  async (req, res) => {
+    const { data, source } = await movieService.collection(req.params.id);
+    return ok(res, data, { source });
+  }
+);
+
 module.exports = router;

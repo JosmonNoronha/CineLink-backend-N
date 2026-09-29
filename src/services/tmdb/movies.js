@@ -50,6 +50,10 @@ async function watchProviders(id) {
   return cached(`/movie/${id}/watch/providers`, {}, 24 * 60 * 60);
 }
 
+async function collection(id) {
+  return cached(`/collection/${id}`, {}, 7 * 24 * 60 * 60); // 7 days
+}
+
 module.exports = {
   listPopular,
   listTopRated,
@@ -61,4 +65,5 @@ module.exports = {
   images,
   recommendations,
   watchProviders,
+  collection,
 };
