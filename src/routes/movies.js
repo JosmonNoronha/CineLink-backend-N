@@ -6,6 +6,7 @@ const { batchDetailsLimiter } = require('../middleware/rateLimiter');
 const movieService = require('../services/tmdb/movies');
 const reviewService = require('../services/tmdb/reviews');
 const compat = require('../services/tmdb/compat');
+const { normalizeCredits } = require('../services/tmdb/credits');
 
 const router = Router();
 
@@ -173,7 +174,7 @@ router.get(
   validate({ params: Joi.object({ id: Joi.number().integer().min(1).required() }) }),
   async (req, res) => {
     const { data, source } = await movieService.credits(req.params.id);
-    return ok(res, data, { source });
+    return ok(res, normalizeCredits(data), { source });
   }
 );
 

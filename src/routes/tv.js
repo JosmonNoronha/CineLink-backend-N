@@ -4,6 +4,7 @@ const { ok } = require('../utils/helpers');
 const { validate } = require('../middleware/validator');
 const tvService = require('../services/tmdb/tv');
 const reviewService = require('../services/tmdb/reviews');
+const { normalizeCredits } = require('../services/tmdb/credits');
 
 const router = Router();
 
@@ -90,7 +91,7 @@ router.get(
   validate({ params: Joi.object({ id: Joi.number().integer().min(1).required() }) }),
   async (req, res) => {
     const { data, source } = await tvService.credits(req.params.id);
-    return ok(res, data, { source });
+    return ok(res, normalizeCredits(data), { source });
   }
 );
 
