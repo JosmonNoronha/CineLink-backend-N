@@ -1,6 +1,14 @@
 const mockGet = jest.fn();
 const mockSet = jest.fn();
 const mockDelete = jest.fn();
+const mockCreate = jest.fn();
+const mockRunTransaction = jest.fn(async (callback) =>
+  callback({
+    get: mockGet,
+    set: (_ref, data, options) => mockSet(data, options),
+    create: (_ref, data) => mockCreate(data),
+  })
+);
 const mockWatchlistDoc = jest.fn(() => ({
   get: mockGet,
   set: mockSet,
@@ -21,6 +29,7 @@ const mockCollection = jest.fn(() => ({
 }));
 const mockFirestore = {
   collection: mockCollection,
+  runTransaction: mockRunTransaction,
 };
 
 jest.mock('firebase-admin', () => ({
@@ -99,7 +108,7 @@ describe('watchlists service', () => {
     const result = await createWatchlist('uid-1', { name: 'Favorites', description: '' });
 
     expect(result).toMatchObject({ id: 'Favorites', name: 'Favorites' });
-    expect(mockSet).toHaveBeenCalledWith(
+    expect(mockCreate).toHaveBeenCalledWith(
       expect.objectContaining({ movies: [], createdAt: 'SERVER_TIMESTAMP', updatedAt: 'SERVER_TIMESTAMP' })
     );
   });

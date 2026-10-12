@@ -1,5 +1,11 @@
 const mockGet = jest.fn();
 const mockSet = jest.fn();
+const mockRunTransaction = jest.fn(async (callback) =>
+  callback({
+    get: mockGet,
+    set: (_ref, data, options) => mockSet(data, options),
+  })
+);
 const mockDoc = jest.fn(() => ({
   get: mockGet,
   set: mockSet,
@@ -9,7 +15,7 @@ const mockCollection = jest.fn(() => ({
 }));
 
 jest.mock('../src/config/firebase', () => ({
-  getFirestore: () => ({ collection: mockCollection }),
+  getFirestore: () => ({ collection: mockCollection, runTransaction: mockRunTransaction }),
 }));
 
 const { listFavorites, addFavorite, removeFavorite } = require('../src/services/user/favorites');
