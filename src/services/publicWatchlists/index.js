@@ -18,12 +18,9 @@ const itemDoc = (id, key) => itemsCol(id).doc(String(key));
 const likesCol = (id) => listDoc(id).collection('likes');
 const followsCol = (id) => listDoc(id).collection('follows');
 
-const ownerRefDoc = (uid, id) =>
-  db().collection('users').doc(uid).collection('publicWatchlistRefs').doc(id);
-const followedRefDoc = (uid, id) =>
-  db().collection('users').doc(uid).collection('followedLists').doc(id);
-const reportDoc = (listId, uid) =>
-  db().collection('publicWatchlistReports').doc(`${listId}_${uid}`);
+const ownerRefDoc = (uid, id) => db().collection('users').doc(uid).collection('publicWatchlistRefs').doc(id);
+const followedRefDoc = (uid, id) => db().collection('users').doc(uid).collection('followedLists').doc(id);
+const reportDoc = (listId, uid) => db().collection('publicWatchlistReports').doc(`${listId}_${uid}`);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -47,7 +44,9 @@ function serializeTimestamp(ts) {
 
 /** Never expose an email (or anything email-shaped) as a public display name. */
 function sanitizeOwnerName(name) {
-  const clean = String(name || '').trim().slice(0, 40);
+  const clean = String(name || '')
+    .trim()
+    .slice(0, 40);
   if (!clean || clean.includes('@')) return 'Anonymous';
   return clean;
 }
@@ -94,6 +93,7 @@ function serializeList(id, data) {
     ownerId: data.ownerId ?? '',
     ownerName: data.ownerName ?? '',
     coverPoster: data.coverPoster ?? null,
+    previewPosters: data.previewPosters ?? (data.coverPoster ? [data.coverPoster] : []),
     tags: data.tags ?? [],
     itemCount: data.itemCount ?? 0,
     likeCount: Math.max(0, data.likeCount ?? 0),
@@ -152,11 +152,7 @@ async function fetchTmdbSummary(tmdbId, mediaType) {
 // ─── Create ───────────────────────────────────────────────────────────────────
 
 async function createPublicWatchlist(uid, { name, description = '', tags = [], ownerName = '' }) {
-  const existing = await db()
-    .collection('users').doc(uid)
-    .collection('publicWatchlistRefs')
-    .count()
-    .get();
+  const existing = await db().collection('users').doc(uid).collection('publicWatchlistRefs').count().get();
 
   if (existing.data().count >= MAX_LISTS_PER_USER) {
     throw new AppError(`Public watchlist limit reached (${MAX_LISTS_PER_USER})`, 413, 'RESOURCE_LIMIT');
@@ -174,6 +170,7 @@ async function createPublicWatchlist(uid, { name, description = '', tags = [], o
     ownerId: uid,
     ownerName: sanitizeOwnerName(ownerName),
     coverPoster: null,
+    previewPosters: [],
     tags: normalizeTags(tags),
     itemCount: 0,
     likeCount: 0,
@@ -211,7 +208,9 @@ async function getPublicWatchlistItems(id, { limit = PAGE_SIZE_DEFAULT, cursor =
   await requirePublicList(id);
   const safeLimit = clampLimit(limit);
 
-  let query = itemsCol(id).orderBy('addedAt', 'desc').limit(safeLimit + 1);
+  let query = itemsCol(id)
+    .orderBy('addedAt', 'desc')
+    .limit(safeLimit + 1);
   if (cursor) query = query.startAfter(toTimestamp(decodeCursor(cursor)));
 
   const docs = (await query.get()).docs;
@@ -299,31 +298,39 @@ async function discoverPublicWatchlists({
 
 async function listFromRefs(refDocs, decorate) {
   const snaps = await db().getAll(...refDocs.map((r) => listDoc(r.id)));
-  const lists = snaps.filter((s) => s.exists && s.data().isPublic).map((s) => decorate(serializeList(s.id, s.data()), s));
+  const lists = snaps
+    .filter((s) => s.exists && s.data().isPublic)
+    .map((s) => decorate(serializeList(s.id, s.data()), s));
   return lists;
 }
 
 async function getUserPublicWatchlists(uid, { limit = PAGE_SIZE_DEFAULT, cursor = null } = {}) {
   const safeLimit = clampLimit(limit);
-  let query = db().collection('users').doc(uid).collection('publicWatchlistRefs')
-    .orderBy('createdAt', 'desc').limit(safeLimit + 1);
+  let query = db()
+    .collection('users')
+    .doc(uid)
+    .collection('publicWatchlistRefs')
+    .orderBy('createdAt', 'desc')
+    .limit(safeLimit + 1);
   if (cursor) query = query.startAfter(toTimestamp(decodeCursor(cursor)));
 
   const refDocs = (await query.get()).docs;
   const hasMore = refDocs.length > safeLimit;
   const refs = refDocs.slice(0, safeLimit);
 
-  const lists = refs.length
-    ? await listFromRefs(refs, (l) => ({ ...l, viewerIsOwner: true }))
-    : [];
+  const lists = refs.length ? await listFromRefs(refs, (l) => ({ ...l, viewerIsOwner: true })) : [];
   const nextCursor = hasMore ? encodeCursor(tsCursor(refs[safeLimit - 1].data().createdAt)) : null;
   return { lists, hasMore, nextCursor };
 }
 
 async function getFollowedWatchlists(uid, { limit = PAGE_SIZE_DEFAULT, cursor = null } = {}) {
   const safeLimit = clampLimit(limit);
-  let query = db().collection('users').doc(uid).collection('followedLists')
-    .orderBy('followedAt', 'desc').limit(safeLimit + 1);
+  let query = db()
+    .collection('users')
+    .doc(uid)
+    .collection('followedLists')
+    .orderBy('followedAt', 'desc')
+    .limit(safeLimit + 1);
   if (cursor) query = query.startAfter(toTimestamp(decodeCursor(cursor)));
 
   const refDocs = (await query.get()).docs;
@@ -378,9 +385,14 @@ async function addItemToPublicWatchlist(uid, listId, { tmdb_id, media_type }) {
       addedAt: now,
       addedBy: uid,
     });
+    const prevPosters = listSnap.data().previewPosters ?? [];
+    const nextPosters = summary.poster
+      ? [summary.poster, ...prevPosters.filter((p) => p !== summary.poster)].slice(0, 4)
+      : prevPosters;
     tx.update(ref, {
       itemCount: admin.firestore.FieldValue.increment(1),
       updatedAt: now,
+      previewPosters: nextPosters,
       ...(!listSnap.data().coverPoster && summary.poster ? { coverPoster: summary.poster } : {}),
     });
     tx.set(ownerRefDoc(uid, listId), { updatedAt: now }, { merge: true });
@@ -414,12 +426,13 @@ async function removeItemFromPublicWatchlist(uid, listId, tmdbKey) {
 
   if (removedPoster === undefined) return { removed: false };
 
-  // Refresh the cover if the removed item was supplying it.
-  const listSnap = await listDoc(listId).get();
-  if (listSnap.exists && listSnap.data().coverPoster === removedPoster) {
-    const next = await itemsCol(listId).orderBy('addedAt', 'desc').limit(1).get();
-    await listDoc(listId).update({ coverPoster: next.empty ? null : next.docs[0].data().poster ?? null });
-  }
+    // Refresh cover + preview posters from the newest remaining items.
+  const recent = await itemsCol(listId).orderBy('addedAt', 'desc').limit(4).get();
+  const posters = recent.docs.map((d) => d.data().poster).filter(Boolean);
+  await listDoc(listId).update({
+    previewPosters: posters,
+    coverPoster: posters[0] ?? null,
+  });
   return { removed: true };
 }
 
@@ -489,7 +502,8 @@ async function updatePublicWatchlist(uid, listId, { name, description, tags }) {
 
   const batch = db().batch();
   batch.update(ref, patch);
-  if (name !== undefined) batch.set(ownerRefDoc(uid, listId), { name: patch.name, updatedAt: now }, { merge: true });
+  if (name !== undefined)
+    batch.set(ownerRefDoc(uid, listId), { name: patch.name, updatedAt: now }, { merge: true });
   await batch.commit();
 
   return serializeList(listId, (await ref.get()).data());
@@ -533,7 +547,8 @@ async function deletePublicWatchlist(uid, listId) {
 
 async function getMembership(uid, tmdbKey) {
   const refs = await db()
-    .collection('users').doc(uid)
+    .collection('users')
+    .doc(uid)
     .collection('publicWatchlistRefs')
     .limit(MAX_LISTS_PER_USER)
     .get();
@@ -598,5 +613,13 @@ module.exports = {
   takedownPublicWatchlist,
   getMembership,
   REPORT_REASONS,
-  _internal: { sanitizeOwnerName, normalizeTags, buildPosterUrl, encodeCursor, decodeCursor, makeItemKey, serializeList },
+  _internal: {
+    sanitizeOwnerName,
+    normalizeTags,
+    buildPosterUrl,
+    encodeCursor,
+    decodeCursor,
+    makeItemKey,
+    serializeList,
+  },
 };
