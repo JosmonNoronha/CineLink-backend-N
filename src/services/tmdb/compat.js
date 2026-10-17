@@ -45,55 +45,93 @@ async function resolveToTmdb(rawId) {
   throw new AppError('Unsupported id format', 400, 'VALIDATION_ERROR');
 }
 
+function splitYear(q) {
+  const m = q.match(/^(.*\S)\s+\(?((?:19|20)\d{2})\)?$/);
+  return m ? { text: m[1].trim(), year: m[2] } : { text: q, year: null };
+}
+ 
+// One place that talks to TMDb search. Always returns rows with media_type set.
+async function rawSearch({ query, type, page, year }) {
+  const wantsMovie = type !== 'series' && type !== 'tv';
+  const wantsTv = type !== 'movie';
+  const single = wantsMovie !== wantsTv;
+ 
+  if (year) {
+    // /search/multi has no year filter, so query movie + tv separately.
+    const [mv, tv] = await Promise.all([
+      wantsMovie ? tmdbGet('/search/movie', { query, page, year }) : null,
+      wantsTv ? tmdbGet('/search/tv', { query, page, first_air_date_year: year }) : null,
+    ]);
+    const rows = [
+      ...((mv && mv.results) || []).map((r) => ({ ...r, media_type: 'movie' })),
+      ...((tv && tv.results) || []).map((r) => ({ ...r, media_type: 'tv' })),
+    ].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+ 
+    return {
+      rows,
+      total: ((mv && mv.total_results) || 0) + ((tv && tv.total_results) || 0),
+      pages: Math.max((mv && mv.total_pages) || 0, (tv && tv.total_pages) || 0),
+    };
+  }
+ 
+  const endpoint = single ? (wantsMovie ? '/search/movie' : '/search/tv') : '/search/multi';
+  const forced = single ? (wantsMovie ? 'movie' : 'tv') : null;
+  const data = await tmdbGet(endpoint, { query, page });
+ 
+  const rows = (Array.isArray(data.results) ? data.results : [])
+    .map((r) => (forced ? { ...r, media_type: forced } : r))
+    .filter((r) => r.media_type === 'movie' || r.media_type === 'tv');
+ 
+  return {
+    rows,
+    total: data.total_results || rows.length,
+    pages: data.total_pages || 0,
+  };
+}
+ 
 async function searchOmdbLike({ q, type, page }) {
   const query = (q || '').trim();
   if (!query) return { Search: [], totalResults: '0', Response: 'False' };
-
-  let endpoint = '/search/multi';
-  let mapType = null;
-  if (type === 'movie') {
-    endpoint = '/search/movie';
-    mapType = 'movie';
-  } else if (type === 'series' || type === 'tv') {
-    endpoint = '/search/tv';
-    mapType = 'tv';
+ 
+  const { text, year } = splitYear(query);
+ 
+  let res = year ? await rawSearch({ query: text, type, page, year }) : null;
+  // No year in the query, or the year-filtered search found nothing on page 1
+  // (e.g. "Blade Runner 2049"): search the full query as typed.
+  if (!res || (res.rows.length === 0 && page === 1)) {
+    res = await rawSearch({ query, type, page, year: null });
   }
-
-  const data = await tmdbGet(endpoint, { query, page });
-  const results = Array.isArray(data.results) ? data.results : [];
-
-  // Genre mapping best-effort
-  const genreMap = mapType ? await getGenreMap(mapType) : null;
-
-  const Search = results
-    .filter((r) => (mapType ? true : r.media_type === 'movie' || r.media_type === 'tv'))
-    .map((r) => {
-      const mediaType = mapType || r.media_type;
-      const title = mediaType === 'tv' ? r.name : r.title;
-      const date = mediaType === 'tv' ? r.first_air_date : r.release_date;
-      const genres = (r.genre_ids || []).map((id) => (genreMap ? genreMap[id] : null)).filter(Boolean);
-
-      // Extract cast overview if available (TMDb search includes some cast in overview)
-      const overview = r.overview || '';
-
-      return {
-        Title: title || 'N/A',
-        Year: yearFromDate(date),
-        imdbID: `tmdb:${mediaType}:${r.id}`,
-        Type: mediaType === 'tv' ? 'series' : 'movie',
-        Poster: posterUrl(r.poster_path),
-        _genres: genres.join(', '),
-        Genre: genres.join(', '),
-        Actors: overview.substring(0, 100), // Use overview as searchable text
-        Director: '', // Will be populated on detail view
-        _tmdbId: r.id,
-      };
-    });
-
+ 
+  const [movieGenres, tvGenres] = await Promise.all([
+    getGenreMap('movie').catch(() => ({})),
+    getGenreMap('tv').catch(() => ({})),
+  ]);
+ 
+  const Search = res.rows.map((r) => {
+    const isTv = r.media_type === 'tv';
+    const genreMap = (isTv ? tvGenres : movieGenres) || {};
+    const genres = (r.genre_ids || []).map((id) => genreMap[id]).filter(Boolean);
+    const overview = r.overview || '';
+ 
+    return {
+      Title: (isTv ? r.name : r.title) || 'N/A',
+      Year: yearFromDate(isTv ? r.first_air_date : r.release_date),
+      imdbID: `tmdb:${r.media_type}:${r.id}`,
+      Type: isTv ? 'series' : 'movie',
+      Poster: posterUrl(r.poster_path),
+      _genres: genres.join(', '),
+      Genre: genres.join(', '),
+      Actors: overview.substring(0, 100),
+      Director: '',
+      _tmdbId: r.id,
+      _popularity: r.popularity || 0, // used by rankTitles() in unified.js
+    };
+  });
+ 
   return {
     Search,
-    totalResults: String(data.total_results || Search.length || 0),
-    totalPages: data.total_pages || 0,
+    totalResults: String(res.total || Search.length || 0),
+    totalPages: res.pages || 0,
     page,
     Response: Search.length ? 'True' : 'False',
   };
@@ -210,16 +248,30 @@ async function episodeOmdbLike({ tmdb_tv_id, season_number, episode_number }) {
   };
 }
 
-async function searchPeople({ q, page = 1 }) {
+const normName = (s) =>
+  ` ${String(s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()} `;
+
+async function searchPeople({ q, page = 1, strict = false }) {
   const query = (q || '').trim();
   if (!query) return { results: [], totalResults: 0 };
 
   const data = await tmdbGet('/search/person', { query, page });
-  const people = Array.isArray(data.results) ? data.results : [];
+
+  let people = Array.isArray(data.results) ? data.results : [];
+
+  if (strict) {
+    const needle = normName(query);
+    people = people.filter((p) => normName(p.name).includes(needle));
+  }
 
   // Get movies/TV shows for each person (limit to top 3 people)
   const results = await Promise.all(
-    people.slice(0, 3).map(async (person) => {
+    people.slice(0, strict ? 2 : 3).map(async (person) => {
       try {
         // Get person's movie and TV credits
         const credits = await tmdbGet(`/person/${person.id}/combined_credits`);
@@ -270,6 +322,7 @@ async function searchPeople({ q, page = 1 }) {
               _tmdbId: work.id,
               _personMatch: person.name, // Flag this as from person search
               _popularity: work.popularity,
+              _strongMatch: normName(person.name).trim() === normName(query).trim(),
             };
           });
 
@@ -297,10 +350,7 @@ async function searchByGenreOmdbLike({ genreResults }) {
     return { Search: [], totalResults: '0', Response: 'False' };
   }
 
-  const [movieGenreMap, tvGenreMap] = await Promise.all([
-    getGenreMap('movie'),
-    getGenreMap('tv'),
-  ]);
+  const [movieGenreMap, tvGenreMap] = await Promise.all([getGenreMap('movie'), getGenreMap('tv')]);
 
   const Search = genreResults.results.map((r) => {
     const mediaType = r.media_type || (r.first_air_date ? 'tv' : 'movie');

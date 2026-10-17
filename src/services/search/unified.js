@@ -39,6 +39,48 @@ function normalizeQuery(query) {
   return String(query || '').trim().replace(/\s+/g, ' ');
 }
 
+const foldText = (s) =>
+  String(s || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '') // strip accents: Amélie → Amelie
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+ 
+/**
+ * Re-rank TMDb title results so the title the user typed comes first.
+ *   tier 0: exact title match ("Heat", "Spider-Man" for "spiderman")
+ *           ties broken by popularity (2022 movie beats obscure 2004 series)
+ *   tier 1: title starts with the query as a whole word ("Alien: Romulus")
+ *   tier 2: everything else, in TMDb's original order
+ * A trailing year ("Dune 2021") is ignored when matching.
+ */
+function rankTitles(items, query) {
+  const list = Array.isArray(items) ? items : [];
+  const q = foldText(String(query || '').replace(/\s+\(?(?:19|20)\d{2}\)?$/, ''));
+  if (!q) return list;
+  const qCompact = q.replace(/ /g, '');
+ 
+  const tierOf = (item) => {
+    const t = foldText(item.Title);
+    if (t === q || t.replace(/ /g, '') === qCompact) return 0;
+    if (t.startsWith(`${q} `)) return 1;
+    return 2;
+  };
+ 
+  return list
+    .map((item, index) => ({ item, index, tier: tierOf(item) }))
+    .sort((a, b) => {
+      if (a.tier !== b.tier) return a.tier - b.tier;
+      if (a.tier <= 1) {
+        const diff = (b.item._popularity || 0) - (a.item._popularity || 0);
+        if (diff !== 0) return diff;
+      }
+      return a.index - b.index;
+    })
+    .map((x) => x.item);
+}
+
 function isGenreSearch(query) {
   const queryLower = normalizeQuery(query).toLowerCase();
   return GENRE_KEYWORDS_LIST.some((keyword) => queryLower === keyword || queryLower === `${keyword}s`);
@@ -135,12 +177,14 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
   }
 
   const titlePromise = searchOmdbLike({ q: normalizedQuery, type: normType, page: effectivePage });
-  const personPromise = shouldRunPersonSearch(normalizedQuery)
-    ? searchPeople({ q: normalizedQuery, page: effectivePage })
+  const personPromise =
+  effectivePage === 1 && shouldRunPersonSearch(normalizedQuery)
+    ? searchPeople({ q: normalizedQuery, page: 1, strict: true })
     : Promise.resolve({ results: [], totalResults: 0, totalPages: 0, peopleTotalResults: 0 });
 
   const [titleData, personData] = await Promise.all([titlePromise, personPromise]);
 
+  const rankedTitles = rankTitles(titleData.Search, normalizedQuery);
   const mergedResults = [];
   const seenIds = new Set();
 
@@ -154,8 +198,14 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
     });
   };
 
-  pushUnique(personData.results);
-  pushUnique(titleData.Search);
+  const strong = personData.results.some((w) => w._strongMatch);
+if (strong) {
+  pushUnique(personData.results.slice(0, 20));  // "Tom Hanks" → his films first
+  pushUnique(rankedTitles);
+} else {
+  pushUnique(rankedTitles);                 // "Heat" → the movie first
+  pushUnique(personData.results.slice(0, 8));
+}
 
   if (normType) {
     const filteredResults = mergedResults.filter((item) => item.Type === normType);
@@ -165,7 +215,7 @@ async function unifiedSearch({ query, type = 'all', page = 1, filters, cursor })
   const titleTotalResults = parseInt(titleData.totalResults || '0', 10) || 0;
   const titleTotalPages = titleData.totalPages || Math.max(1, Math.ceil(titleTotalResults / 20));
   const personTotalResults = parseInt(personData.totalResults || '0', 10) || 0;
-  const personTotalPages = personData.totalPages || (personTotalResults > 0 ? effectivePage : 0);
+  const personTotalPages = 0;
 
   const hasMore = Math.max(titleTotalPages, personTotalPages) > effectivePage;
   const totalResultsEstimated = Math.max(
