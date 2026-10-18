@@ -1,6 +1,7 @@
 const { searchOmdbLike, searchPeople, searchByGenreOmdbLike } = require('../tmdb/compat');
 const { searchByGenre } = require('../tmdb/genres');
 const { AppError } = require('../../utils/errors');
+const { rankTitles } = require('./rank');
 
 const GENRE_KEYWORDS_LIST = [
   'action',
@@ -37,48 +38,6 @@ const GENRE_KEYWORDS_LIST = [
 
 function normalizeQuery(query) {
   return String(query || '').trim().replace(/\s+/g, ' ');
-}
-
-const foldText = (s) =>
-  String(s || '')
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '') // strip accents: Amélie → Amelie
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
- 
-/**
- * Re-rank TMDb title results so the title the user typed comes first.
- *   tier 0: exact title match ("Heat", "Spider-Man" for "spiderman")
- *           ties broken by popularity (2022 movie beats obscure 2004 series)
- *   tier 1: title starts with the query as a whole word ("Alien: Romulus")
- *   tier 2: everything else, in TMDb's original order
- * A trailing year ("Dune 2021") is ignored when matching.
- */
-function rankTitles(items, query) {
-  const list = Array.isArray(items) ? items : [];
-  const q = foldText(String(query || '').replace(/\s+\(?(?:19|20)\d{2}\)?$/, ''));
-  if (!q) return list;
-  const qCompact = q.replace(/ /g, '');
- 
-  const tierOf = (item) => {
-    const t = foldText(item.Title);
-    if (t === q || t.replace(/ /g, '') === qCompact) return 0;
-    if (t.startsWith(`${q} `)) return 1;
-    return 2;
-  };
- 
-  return list
-    .map((item, index) => ({ item, index, tier: tierOf(item) }))
-    .sort((a, b) => {
-      if (a.tier !== b.tier) return a.tier - b.tier;
-      if (a.tier <= 1) {
-        const diff = (b.item._popularity || 0) - (a.item._popularity || 0);
-        if (diff !== 0) return diff;
-      }
-      return a.index - b.index;
-    })
-    .map((x) => x.item);
 }
 
 function isGenreSearch(query) {

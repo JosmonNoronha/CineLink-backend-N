@@ -2,13 +2,14 @@ const { Router } = require('express');
 const Joi = require('joi');
 const { ok } = require('../utils/helpers');
 const { validate } = require('../middleware/validator');
-const { searchLimiter } = require('../middleware/rateLimiter');
+const { searchLimiter, suggestLimiter } = require('../middleware/rateLimiter');
 const searchService = require('../services/tmdb/search');
 const { searchPeople, searchByGenreOmdbLike } = require('../services/tmdb/compat');
 const { searchByGenre } = require('../services/tmdb/genres');
 const { unifiedSearch } = require('../services/search/unified');
 const { analyticsService } = require('../services/analytics');
 const trendingService = require('../services/tmdb/trending');
+const typeaheadService = require('../services/search/typeahead');
 
 const router = Router();
 
@@ -29,6 +30,25 @@ const suggestionQuerySchema = Joi.object({
   query: Joi.string().trim().allow('').default(''),
   limit: Joi.number().integer().min(1).max(20).default(8),
 });
+
+const typeaheadSchema = Joi.object({
+  q: Joi.string().trim().min(1).max(100).required(),
+  limit: Joi.number().integer().min(1).max(10).default(6),
+});
+
+router.get(
+  '/typeahead',
+  suggestLimiter,
+  validate({ query: typeaheadSchema }),
+  async (req, res) => {
+    const data = await typeaheadService.typeahead({
+      q: req.query.q,
+      limit: req.query.limit || 6,
+    });
+    res.set('Cache-Control', 'private, max-age=60');
+    return ok(res, data);
+  }
+);
 
 router.use(searchLimiter);
 

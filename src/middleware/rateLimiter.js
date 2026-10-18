@@ -31,4 +31,11 @@ const batchDetailsLimiter = rateLimit({
   keyGenerator: (req) => req?.user?.uid || req.ip,
 });
 
-module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter, batchDetailsLimiter };
+const suggestLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 90,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter, batchDetailsLimiter, suggestLimiter, };
