@@ -1,142 +1,88 @@
 const { Router } = require('express');
+const Joi = require('joi');
 const { analyticsService } = require('../services/analytics');
 const { ok } = require('../utils/helpers');
-const { optionalAuth } = require('../middleware/auth');
+const { authMiddleware, optionalAuth } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/rbac');
+const { validate } = require('../middleware/validator');
+const { env } = require('../config/environment');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 
 const router = Router();
 
-/**
- * GET /api/analytics/overview
- * Get overall analytics overview
- */
-router.get('/overview', optionalAuth, async (req, res) => {
+const limitQuery = Joi.object({ limit: Joi.number().integer().min(1).max(50).default(10) });
+
+// Operational data: only people with the admin claim. Public list further down.
+const adminOnly = [authMiddleware, requirePermission('admin:all')];
+
+function analyticsError(what, error) {
+  // Details stay in the log; the client never sees internal error messages.
+  logger.error(`Failed to get ${what}`, { error: error.message });
+  return new AppError(`Failed to retrieve ${what}`, 500, 'ANALYTICS_ERROR', undefined, {
+    userMessage: `Unable to load ${what} right now. Please try again.`,
+    retryable: true,
+  });
+}
+
+/** GET /api/analytics/overview  (admin) */
+router.get('/overview', ...adminOnly, async (_req, res) => {
   try {
-    const overview = await analyticsService.getOverview();
-    const userEngagement = await analyticsService.getUserEngagement();
-    
-    return ok(res, {
-      ...overview,
-      engagement: userEngagement,
-      timestamp: new Date().toISOString(),
-    });
+    const [overview, engagement] = await Promise.all([
+      analyticsService.getOverview(),
+      analyticsService.getUserEngagement(),
+    ]);
+    return ok(res, { ...overview, engagement, timestamp: new Date().toISOString() });
   } catch (error) {
-    logger.error('Failed to get analytics overview', { error: error.message });
-    throw new AppError(
-      'Failed to retrieve analytics overview',
-      500,
-      'ANALYTICS_ERROR',
-      { serviceError: error.message },
-      {
-        userMessage: 'Unable to load analytics overview right now. Please try again.',
-        retryable: true,
-      }
-    );
+    throw analyticsError('analytics overview', error);
   }
 });
+
+/** GET /api/analytics/user-engagement  (admin) */
+router.get('/user-engagement', ...adminOnly, async (_req, res) => {
+  try {
+    return ok(res, await analyticsService.getUserEngagement());
+  } catch (error) {
+    throw analyticsError('user engagement', error);
+  }
+});
+
+/** GET /api/analytics/performance  (admin) */
+router.get('/performance', ...adminOnly, async (_req, res) => {
+  try {
+    const performance = await analyticsService.getPerformanceMetrics();
+    return ok(res, { endpoints: performance, timestamp: new Date().toISOString() });
+  } catch (error) {
+    throw analyticsError('performance metrics', error);
+  }
+});
+
+// ── Public (the app uses these for search suggestions) ────────────────────────
 
 /**
  * GET /api/analytics/popular-searches
- * Get most popular search queries
+ * Only queries that at least POPULAR_SEARCH_MIN_COUNT searches agree on, so one person's
+ * one-off search never appears. Scores are counts, not user data.
  */
-router.get('/popular-searches', optionalAuth, async (req, res) => {
+router.get('/popular-searches', optionalAuth, validate({ query: limitQuery }), async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
-    const searches = await analyticsService.getPopularSearches(limit);
-    
-    return ok(res, {
-      searches,
-      count: searches.length,
-    });
+    const raw = await analyticsService.getPopularSearches(req.query.limit);
+    const searches = raw.filter((s) => s.score >= env.POPULAR_SEARCH_MIN_COUNT);
+    res.set('Cache-Control', 'public, max-age=60');
+    return ok(res, { searches, count: searches.length });
   } catch (error) {
-    logger.error('Failed to get popular searches', { error: error.message });
-    throw new AppError(
-      'Failed to retrieve popular searches',
-      500,
-      'ANALYTICS_ERROR',
-      { serviceError: error.message },
-      {
-        userMessage: 'Unable to load popular searches right now. Please try again.',
-        retryable: true,
-      }
-    );
+    throw analyticsError('popular searches', error);
   }
 });
 
-/**
- * GET /api/analytics/popular-content
- * Get most viewed movies and TV shows
- */
-router.get('/popular-content', optionalAuth, async (req, res) => {
+/** GET /api/analytics/popular-content */
+router.get('/popular-content', optionalAuth, validate({ query: limitQuery }), async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 10;
-    const content = await analyticsService.getPopularContent(limit);
-    
+    const content = await analyticsService.getPopularContent(req.query.limit);
+    res.set('Cache-Control', 'public, max-age=60');
     return ok(res, content);
   } catch (error) {
-    logger.error('Failed to get popular content', { error: error.message });
-    throw new AppError(
-      'Failed to retrieve popular content',
-      500,
-      'ANALYTICS_ERROR',
-      { serviceError: error.message },
-      {
-        userMessage: 'Unable to load popular content right now. Please try again.',
-        retryable: true,
-      }
-    );
-  }
-});
-
-/**
- * GET /api/analytics/user-engagement
- * Get user engagement metrics
- */
-router.get('/user-engagement', optionalAuth, async (req, res) => {
-  try {
-    const engagement = await analyticsService.getUserEngagement();
-    
-    return ok(res, engagement);
-  } catch (error) {
-    logger.error('Failed to get user engagement', { error: error.message });
-    throw new AppError(
-      'Failed to retrieve user engagement',
-      500,
-      'ANALYTICS_ERROR',
-      { serviceError: error.message },
-      {
-        userMessage: 'Unable to load user engagement right now. Please try again.',
-        retryable: true,
-      }
-    );
-  }
-});
-
-/**
- * GET /api/analytics/performance
- * Get API performance metrics
- */
-router.get('/performance', optionalAuth, async (req, res) => {
-  try {
-    const performance = await analyticsService.getPerformanceMetrics();
-    
-    return ok(res, {
-      endpoints: performance,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error('Failed to get performance metrics', { error: error.message });
-    throw new AppError(
-      'Failed to retrieve performance metrics',
-      500,
-      'ANALYTICS_ERROR',
-      { serviceError: error.message },
-      {
-        userMessage: 'Unable to load performance metrics right now. Please try again.',
-        retryable: true,
-      }
-    );
+    throw analyticsError('popular content', error);
   }
 });
 

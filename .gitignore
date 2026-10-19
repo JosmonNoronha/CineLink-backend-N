@@ -120,3 +120,6 @@ STARTUP_SPEED_TESTING.md
 ML_RECOMMENDATIONS_API.md
 WATCH_PROVIDERS_TESTING.md
 !README.md
+
+# Local secrets (e.g. Prometheus bearer token file)
+secrets/

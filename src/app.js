@@ -18,12 +18,7 @@ const { initializeRedis } = require('./config/redis');
 const { analyticsService } = require('./services/analytics');
 const { warmupTmdbCaches } = require('./services/tmdb/warmup');
 const { initializeGrafanaCloudPush } = require('./routes/metrics');
-
-function shouldEnableStatusMonitor() {
-  if (process.env.STATUS_MONITOR_ENABLED === 'false') return false;
-  if (env.NODE_ENV === 'test') return false;
-  return true;
-}
+const { mountStatusMonitor } = require('./middleware/statusMonitor');
 
 async function createApp() {
   // Initialize Firebase Admin SDK immediately to avoid cold-start issues
@@ -79,46 +74,8 @@ async function createApp() {
 
   const app = express();
 
-  // Status monitor dashboard (disabled in tests due response-header hook conflicts)
-  if (shouldEnableStatusMonitor()) {
-    const statusMonitor = require('express-status-monitor');
-    app.use(
-      statusMonitor({
-        title: 'CineLink API Status',
-        path: '/status-monitor',
-        spans: [
-          {
-            interval: 1, // Every second
-            retention: 60, // Keep 60 datapoints (1 minute)
-          },
-          {
-            interval: 5, // Every 5 seconds
-            retention: 60, // Keep 60 datapoints (5 minutes)
-          },
-          {
-            interval: 15, // Every 15 seconds
-            retention: 60, // Keep 60 datapoints (15 minutes)
-          },
-        ],
-        chartVisibility: {
-          cpu: true,
-          mem: true,
-          load: true,
-          responseTime: true,
-          rps: true,
-          statusCodes: true,
-        },
-        healthChecks: [
-          {
-            protocol: 'http',
-            host: 'localhost',
-            path: '/api/health',
-            port: env.PORT,
-          },
-        ],
-      })
-    );
-  }
+  // Status dashboard: off by default; when enabled it sits behind OPS_SECRET (page and live socket).
+  mountStatusMonitor(app, env);
 
   if (env.SENTRY_DSN) {
     Sentry.init({

@@ -21,13 +21,25 @@ jest.mock('../src/services/analytics', () => ({
   },
 }));
 
-jest.mock('../src/middleware/auth', () => ({
-  optionalAuth: (_req, _res, next) => next(),
-}));
+// x-test-role: admin | user | (absent => unauthenticated)
+jest.mock('../src/middleware/auth', () => {
+  const { AppError } = require('../src/utils/errors');
+  return {
+    optionalAuth: (_req, _res, next) => next(),
+    authMiddleware: (req, _res, next) => {
+      const role = req.headers['x-test-role'];
+      if (!role) return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
+      req.user = { uid: 'u1', permissions: role === 'admin' ? ['user:read', 'user:write', 'admin:all'] : ['user:read', 'user:write'] };
+      return next();
+    },
+  };
+});
 
 jest.mock('../src/utils/logger', () => ({
   logger: {
     error: (...args) => mockLoggerError(...args),
+    warn: jest.fn(),
+    info: jest.fn(),
   },
 }));
 
@@ -51,7 +63,7 @@ describe('analytics routes', () => {
     mockGetUserEngagement.mockResolvedValueOnce({ activeUsersToday: 5 });
 
     const app = buildApp();
-    const res = await request(app).get('/api/analytics/overview');
+    const res = await request(app).get('/api/analytics/overview').set('x-test-role', 'admin');
 
     expect(res.status).toBe(200);
     expect(res.body.success).toBe(true);
@@ -85,8 +97,8 @@ describe('analytics routes', () => {
 
     const app = buildApp();
     const contentRes = await request(app).get('/api/analytics/popular-content?limit=2');
-    const engagementRes = await request(app).get('/api/analytics/user-engagement');
-    const perfRes = await request(app).get('/api/analytics/performance');
+    const engagementRes = await request(app).get('/api/analytics/user-engagement').set('x-test-role', 'admin');
+    const perfRes = await request(app).get('/api/analytics/performance').set('x-test-role', 'admin');
 
     expect(contentRes.status).toBe(200);
     expect(engagementRes.status).toBe(200);
@@ -103,7 +115,7 @@ describe('analytics routes', () => {
     mockGetOverview.mockRejectedValueOnce(new Error('analytics down'));
 
     const app = buildApp();
-    const res = await request(app).get('/api/analytics/overview');
+    const res = await request(app).get('/api/analytics/overview').set('x-test-role', 'admin');
 
     expect(res.status).toBe(500);
     expect(res.body).toMatchObject({
@@ -113,5 +125,38 @@ describe('analytics routes', () => {
       },
     });
     expect(mockLoggerError).toHaveBeenCalled();
+  });
+
+  test('operational endpoints reject anonymous (401) and non-admin (403) callers', async () => {
+    const app = buildApp();
+    for (const path of ['overview', 'user-engagement', 'performance']) {
+      // eslint-disable-next-line no-await-in-loop
+      const anon = await request(app).get(`/api/analytics/${path}`);
+      // eslint-disable-next-line no-await-in-loop
+      const user = await request(app).get(`/api/analytics/${path}`).set('x-test-role', 'user');
+      expect(anon.status).toBe(401);
+      expect(user.status).toBe(403);
+    }
+    expect(mockGetOverview).not.toHaveBeenCalled();
+    expect(mockGetPerformanceMetrics).not.toHaveBeenCalled();
+  });
+
+  test('popular-searches hides rare queries, clamps limit and never leaks error details', async () => {
+    mockGetPopularSearches.mockResolvedValueOnce([
+      { query: 'matrix', score: 12 },
+      { query: 'someone private', score: 1 },
+    ]);
+    const app = buildApp();
+    const res = await request(app).get('/api/analytics/popular-searches');
+    expect(res.body.data.searches).toEqual([{ query: 'matrix', score: 12 }]);
+    expect(res.headers['cache-control']).toContain('max-age=60');
+
+    const tooBig = await request(app).get('/api/analytics/popular-searches?limit=5000');
+    expect(tooBig.status).toBe(400);
+
+    mockGetPopularSearches.mockRejectedValueOnce(new Error('redis password is hunter2'));
+    const failed = await request(app).get('/api/analytics/popular-searches');
+    expect(failed.status).toBe(500);
+    expect(JSON.stringify(failed.body)).not.toContain('hunter2');
   });
 });

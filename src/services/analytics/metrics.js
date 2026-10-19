@@ -2,6 +2,8 @@ const {
   incrementCounter,
   incrementHashField,
   addToSortedSet,
+  incrementSortedSet,
+  trimSortedSet,
   getMetric,
   getHash,
   getTopFromSortedSet,
@@ -17,7 +19,8 @@ const keys = {
   responseTimesByEndpoint: () => 'metrics:response_times:by_endpoint',
   statusCodes: () => 'metrics:status_codes',
   activeUsers: () => 'metrics:active_users',
-  popularSearches: () => 'metrics:popular_searches',
+  // v2 holds real counts. The old key stored Date.now() scores (recent raw queries); delete it.
+  popularSearches: () => 'metrics:popular_searches:v2',
   popularMovies: () => 'metrics:popular_movies',
   popularTVShows: () => 'metrics:popular_tv',
   cacheHits: () => 'metrics:cache:hits',
@@ -86,11 +89,25 @@ async function trackActiveUser(userId) {
   }
 }
 
+const MAX_TRACKED_SEARCHES = 2000;
+
+/** Lowercase/trim a search and drop anything that looks personal or is useless as a suggestion. */
+function normalizeSearchQuery(query) {
+  const q = String(query || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  if (q.length < 2 || q.length > 60) return null;
+  if (q.includes('@') || /\d{6,}/.test(q)) return null;
+  return q;
+}
+
 /**
- * Track search query
+ * Track search query (counted, normalised, bounded)
  */
 async function trackSearch(query, userId = null) {
-  await addToSortedSet(keys.popularSearches(), Date.now(), query);
+  const normalized = normalizeSearchQuery(query);
+  if (normalized) {
+    await incrementSortedSet(keys.popularSearches(), normalized, 1);
+    await trimSortedSet(keys.popularSearches(), MAX_TRACKED_SEARCHES);
+  }
 
   if (userId) {
     await trackActiveUser(userId);
@@ -261,6 +278,7 @@ async function getPerformanceMetrics() {
 }
 
 module.exports = {
+  normalizeSearchQuery,
   trackRequest,
   trackError,
   trackActiveUser,

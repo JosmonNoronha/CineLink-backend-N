@@ -2,6 +2,7 @@ const { Router } = require('express');
 const promClient = require('prom-client');
 const https = require('https');
 const { logger } = require('../utils/logger');
+const { requireOpsAuth } = require('../middleware/opsAuth');
 
 const router = Router();
 const register = new promClient.Registry();
@@ -40,7 +41,6 @@ const GRAFANA_REMOTE_WRITE_URL = process.env.GRAFANA_REMOTE_WRITE_URL;
 const GRAFANA_USERNAME = process.env.GRAFANA_USERNAME;
 const GRAFANA_API_KEY = process.env.GRAFANA_API_KEY;
 const GRAFANA_PUSH_INTERVAL_MS = parseInt(process.env.GRAFANA_PUSH_INTERVAL_MS || '15000', 10);
-const METRICS_SECRET = process.env.METRICS_SECRET;
 
 // Parse Prometheus text format into time series for remote write
 function parsePrometheusText(text) {
@@ -228,21 +228,7 @@ function initializeGrafanaCloudPush() {
   }
 }
 
-function metricsSecurityMiddleware(req, res, next) {
-  if (process.env.NODE_ENV !== 'production') return next();
-
-  const providedSecret = req.headers['x-metrics-token'] || req.headers['authorization'];
-  if (!METRICS_SECRET) {
-    logger.error('[metrics] METRICS_SECRET not configured in production');
-    return res.status(503).json({ error: 'Metrics endpoint not configured' });
-  }
-  if (providedSecret !== METRICS_SECRET) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  next();
-}
-
-router.get('/', metricsSecurityMiddleware, async (_req, res) => {
+router.get('/', ...requireOpsAuth({ name: 'Metrics' }), async (_req, res) => {
   res.set('Content-Type', register.contentType);
   res.end(await register.metrics());
 });

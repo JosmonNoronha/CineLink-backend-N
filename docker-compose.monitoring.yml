@@ -3,6 +3,7 @@ services:
     image: quay.io/prometheus/prometheus:latest
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./secrets/metrics_secret:/etc/prometheus/metrics_secret:ro
     ports:
       - '9090:9090'
     restart: unless-stopped
@@ -10,7 +11,7 @@ services:
   grafana:
     image: grafana/grafana:latest
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?set GRAFANA_ADMIN_PASSWORD}
     ports:
       - '3001:3000'
     depends_on:

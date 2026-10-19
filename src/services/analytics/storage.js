@@ -137,6 +137,42 @@ async function addToSortedSet(key, score, member) {
 }
 
 /**
+ * Increment a member's score (a real counter, unlike addToSortedSet which overwrites it)
+ */
+async function incrementSortedSet(key, member, amount = 1) {
+  if (!isRedisReady()) {
+    return false;
+  }
+
+  try {
+    const redis = getRedisClient();
+    await redis.zIncrBy(key, amount, member);
+    return true;
+  } catch (error) {
+    logger.error('Failed to increment sorted set', { key, error: error.message });
+    return false;
+  }
+}
+
+/**
+ * Keep only the `keep` highest-scored members so a sorted set cannot grow without bound
+ */
+async function trimSortedSet(key, keep) {
+  if (!isRedisReady()) {
+    return false;
+  }
+
+  try {
+    const redis = getRedisClient();
+    await redis.zRemRangeByRank(key, 0, -(keep + 1));
+    return true;
+  } catch (error) {
+    logger.error('Failed to trim sorted set', { key, error: error.message });
+    return false;
+  }
+}
+
+/**
  * Get top items from sorted set
  * @param {string} key - Redis key
  * @param {number} limit - Number of items to return
@@ -205,6 +241,8 @@ module.exports = {
   storeEvent,
   storeAggregatedData,
   addToSortedSet,
+  incrementSortedSet,
+  trimSortedSet,
   getTopFromSortedSet,
   incrementHashField,
   getHash,

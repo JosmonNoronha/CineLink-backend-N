@@ -14,7 +14,9 @@ jest.mock('../src/services/tmdb/recommendations', () => mockRecoService);
 jest.mock('../src/services/tmdb/client', () => ({ tmdbGet: (...args) => mockTmdbGet(...args) }));
 jest.mock('../src/services/tmdb/genres', () => ({ getGenreMap: (...args) => mockGetGenreMap(...args) }));
 jest.mock('axios', () => ({ post: (...args) => mockAxiosPost(...args) }));
-jest.mock('../src/utils/logger', () => ({ logger: { error: (...args) => mockLoggerError(...args) } }));
+jest.mock('../src/utils/logger', () => ({
+  logger: { error: (...args) => mockLoggerError(...args), warn: jest.fn(), info: jest.fn() },
+}));
 // Mock optionalAuth to avoid Firebase calls during tests. If the
 // Authorization header equals 'Bearer valid-token' we'll populate `req.user`.
 jest.mock('../src/middleware/auth', () => ({

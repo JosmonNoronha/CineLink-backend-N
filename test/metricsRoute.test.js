@@ -74,4 +74,33 @@ describe('Metrics endpoint', () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('Metrics endpoint not configured');
   });
+
+  test('GET /api/metrics accepts a Bearer token and rejects a bare Authorization header', async () => {
+    const { createApp } = require('../src/app');
+    const app = await createApp();
+
+    const bearer = await request(app).get('/api/metrics').set('Authorization', 'Bearer metrics-secret');
+    const bare = await request(app).get('/api/metrics').set('Authorization', 'metrics-secret');
+
+    expect(bearer.status).toBe(200);
+    expect(bare.status).toBe(403);
+  });
+
+  test('GET /api/metrics is NOT open outside production when no secret is set', async () => {
+    process.env.NODE_ENV = 'development';
+    process.env.METRICS_SECRET = '';
+    delete process.env.OPS_SECRET;
+
+    const { createApp } = require('../src/app');
+    const app = await createApp();
+
+    expect((await request(app).get('/api/metrics')).status).toBe(503);
+  });
+
+  test('GET /status-monitor does not exist unless explicitly enabled', async () => {
+    const { createApp } = require('../src/app');
+    const app = await createApp();
+
+    expect((await request(app).get('/status-monitor')).status).toBe(404);
+  });
 });

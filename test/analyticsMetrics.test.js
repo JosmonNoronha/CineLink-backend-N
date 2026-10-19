@@ -1,6 +1,8 @@
 const mockIncrementCounter = jest.fn();
 const mockIncrementHashField = jest.fn();
 const mockAddToSortedSet = jest.fn();
+const mockIncrementSortedSet = jest.fn();
+const mockTrimSortedSet = jest.fn();
 const mockGetMetric = jest.fn();
 const mockGetHash = jest.fn();
 const mockGetTopFromSortedSet = jest.fn();
@@ -13,6 +15,8 @@ jest.mock('../src/services/analytics/storage', () => ({
   incrementCounter: (...args) => mockIncrementCounter(...args),
   incrementHashField: (...args) => mockIncrementHashField(...args),
   addToSortedSet: (...args) => mockAddToSortedSet(...args),
+  incrementSortedSet: (...args) => mockIncrementSortedSet(...args),
+  trimSortedSet: (...args) => mockTrimSortedSet(...args),
   getMetric: (...args) => mockGetMetric(...args),
   getHash: (...args) => mockGetHash(...args),
   getTopFromSortedSet: (...args) => mockGetTopFromSortedSet(...args),
@@ -66,6 +70,19 @@ describe('analytics metrics service', () => {
 
     expect(mockAddToSortedSet).toHaveBeenCalled();
     expect(mockIncrementCounter).toHaveBeenCalled();
+  });
+
+  test('trackSearch counts normalised queries, bounds the set, and skips personal-looking text', async () => {
+    await metrics.trackSearch('  The   MATRIX ');
+    expect(mockIncrementSortedSet).toHaveBeenCalledWith('metrics:popular_searches:v2', 'the matrix', 1);
+    expect(mockTrimSortedSet).toHaveBeenCalledWith('metrics:popular_searches:v2', 2000);
+
+    mockIncrementSortedSet.mockClear();
+    await metrics.trackSearch('jane@example.com');
+    await metrics.trackSearch('call 9876543210');
+    await metrics.trackSearch('a');
+    await metrics.trackSearch('x'.repeat(61));
+    expect(mockIncrementSortedSet).not.toHaveBeenCalled();
   });
 
   test('getOverviewMetrics computes rates with defaults', async () => {

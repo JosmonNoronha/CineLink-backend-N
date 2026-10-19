@@ -97,11 +97,15 @@ describe('analytics storage', () => {
   test('sorted set and hash helpers handle redis ready/not ready', async () => {
     mockIsRedisReady.mockReturnValue(false);
     await expect(storage.addToSortedSet('z', 1, 'm')).resolves.toBe(false);
+    await expect(storage.incrementSortedSet('z', 'm')).resolves.toBe(false);
+    await expect(storage.trimSortedSet('z', 10)).resolves.toBe(false);
     await expect(storage.getTopFromSortedSet('z', 3)).resolves.toEqual([]);
     await expect(storage.getHash('h')).resolves.toEqual({});
 
     const redis = {
       zAdd: jest.fn().mockResolvedValue(1),
+      zIncrBy: jest.fn().mockResolvedValue(2),
+      zRemRangeByRank: jest.fn().mockResolvedValue(0),
       zRange: jest.fn().mockResolvedValue([{ value: 'a', score: 1 }]),
       hGetAll: jest.fn().mockResolvedValue({ k: 'v' }),
       hIncrBy: jest.fn().mockResolvedValue(1),
@@ -111,6 +115,10 @@ describe('analytics storage', () => {
     mockGetRedisClient.mockReturnValue(redis);
 
     await expect(storage.addToSortedSet('z', 1, 'm')).resolves.toBe(true);
+    await expect(storage.incrementSortedSet('z', 'm', 1)).resolves.toBe(true);
+    expect(redis.zIncrBy).toHaveBeenCalledWith('z', 1, 'm');
+    await expect(storage.trimSortedSet('z', 10)).resolves.toBe(true);
+    expect(redis.zRemRangeByRank).toHaveBeenCalledWith('z', 0, -11);
     await expect(storage.getTopFromSortedSet('z', 3)).resolves.toEqual([{ value: 'a', score: 1 }]);
     await expect(storage.getHash('h')).resolves.toEqual({ k: 'v' });
     await expect(storage.incrementHashField('h', 'f', 2)).resolves.toBe(true);

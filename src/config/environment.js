@@ -62,6 +62,9 @@ const schema = Joi.object({
   GRAFANA_API_KEY: Joi.string().allow('').optional(),
   GRAFANA_PUSH_INTERVAL_MS: Joi.number().min(5000).default(15000).optional(),
   METRICS_SECRET: Joi.string().allow('').optional(),
+  OPS_SECRET: Joi.string().allow('').optional(),
+  STATUS_MONITOR_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
+  POPULAR_SEARCH_MIN_COUNT: Joi.number().integer().min(1).default(3),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -173,6 +176,9 @@ const env = {
   GRAFANA_API_KEY: value.GRAFANA_API_KEY,
   GRAFANA_PUSH_INTERVAL_MS: value.GRAFANA_PUSH_INTERVAL_MS,
   METRICS_SECRET: value.METRICS_SECRET,
+  OPS_SECRET: value.OPS_SECRET,
+  STATUS_MONITOR_ENABLED: value.STATUS_MONITOR_ENABLED,
+  POPULAR_SEARCH_MIN_COUNT: value.POPULAR_SEARCH_MIN_COUNT,
 };
 
 module.exports = { env };
