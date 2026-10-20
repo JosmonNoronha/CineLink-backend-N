@@ -20,7 +20,6 @@ const followsCol = (id) => listDoc(id).collection('follows');
 
 const ownerRefDoc = (uid, id) => db().collection('users').doc(uid).collection('publicWatchlistRefs').doc(id);
 const followedRefDoc = (uid, id) => db().collection('users').doc(uid).collection('followedLists').doc(id);
-const reportDoc = (listId, uid) => db().collection('publicWatchlistReports').doc(`${listId}_${uid}`);
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -560,40 +559,18 @@ async function getMembership(uid, tmdbKey) {
 }
 
 // ─── Moderation ───────────────────────────────────────────────────────────────
+// Reporting, the review queue and takedown/restore live in services/moderation.
+// These wrappers keep the original exports working.
 
-const REPORT_REASONS = ['spam', 'offensive', 'copyright', 'other'];
+const moderation = require('../moderation');
 
-async function reportPublicWatchlist(uid, listId, { reason, note = '' }) {
-  const snap = await requirePublicList(listId);
-  if (snap.data().ownerId === uid) {
-    throw new AppError('Cannot report your own watchlist', 400, 'VALIDATION_ERROR');
-  }
-  // Deterministic id => one report per user per list.
-  await reportDoc(listId, uid).set({
-    watchlistId: listId,
-    reporterId: uid,
-    reason,
-    note: String(note).trim().slice(0, 300),
-    status: 'open',
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { reported: true };
-}
+const REPORT_REASONS = moderation.REPORT_REASONS;
 
-/**
- * Takedown: flips isPublic to false, which removes the list from every query
- * and every 404-guarded read without touching any index.
- */
-async function takedownPublicWatchlist(listId, moderatorUid) {
-  const ref = listDoc(listId);
-  const snap = await ref.get();
-  if (!snap.exists) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
-  await ref.update({
-    isPublic: false,
-    takedownBy: moderatorUid,
-    takedownAt: admin.firestore.FieldValue.serverTimestamp(),
-  });
-  return { takenDown: true };
+const reportPublicWatchlist = (uid, listId, body) => moderation.reportPublicWatchlist(uid, listId, body);
+
+async function takedownPublicWatchlist(listId, moderatorUid, { reason = 'other', note = '' } = {}) {
+  const result = await moderation.applyDecision(listId, moderatorUid, { decision: 'takedown', reason, note });
+  return { takenDown: result.visibility === 'taken_down' };
 }
 
 module.exports = {

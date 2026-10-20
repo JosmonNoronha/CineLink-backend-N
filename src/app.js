@@ -19,6 +19,7 @@ const { analyticsService } = require('./services/analytics');
 const { warmupTmdbCaches } = require('./services/tmdb/warmup');
 const { initializeGrafanaCloudPush } = require('./routes/metrics');
 const { mountStatusMonitor } = require('./middleware/statusMonitor');
+const { mountAdminPanel } = require('./routes/adminPanel');
 
 async function createApp() {
   // Initialize Firebase Admin SDK immediately to avoid cold-start issues
@@ -128,6 +129,7 @@ async function createApp() {
   // }
 
   app.use(env.API_PREFIX, routes);
+  mountAdminPanel(app, env); // /admin, only when FIREBASE_WEB_API_KEY is set
   app.use(notFoundHandler);
 
   if (env.SENTRY_DSN) {

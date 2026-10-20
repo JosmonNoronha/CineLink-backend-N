@@ -19,6 +19,7 @@ router.use('/health',          health);
 router.use('/status',          status);
 router.use('/metrics',         metrics.router);
 router.use('/analytics',       analytics);
+router.use('/admin/moderation', require('./moderation'));
 router.use('/movies',          movies);
 router.use('/tv',              tv);
 router.use('/search',          search);

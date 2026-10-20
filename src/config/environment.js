@@ -65,6 +65,10 @@ const schema = Joi.object({
   OPS_SECRET: Joi.string().allow('').optional(),
   STATUS_MONITOR_ENABLED: Joi.boolean().truthy('true').falsy('false').default(false),
   POPULAR_SEARCH_MIN_COUNT: Joi.number().integer().min(1).default(3),
+  // Distinct open reports that auto-hide a public watchlist. 0 disables auto-hide.
+  AUTO_HIDE_REPORT_THRESHOLD: Joi.number().integer().min(0).default(3),
+  // Firebase Web API key (public by design). Setting it turns on the /admin moderation panel.
+  FIREBASE_WEB_API_KEY: Joi.string().allow('').optional(),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -179,6 +183,8 @@ const env = {
   OPS_SECRET: value.OPS_SECRET,
   STATUS_MONITOR_ENABLED: value.STATUS_MONITOR_ENABLED,
   POPULAR_SEARCH_MIN_COUNT: value.POPULAR_SEARCH_MIN_COUNT,
+  AUTO_HIDE_REPORT_THRESHOLD: value.AUTO_HIDE_REPORT_THRESHOLD,
+  FIREBASE_WEB_API_KEY: value.FIREBASE_WEB_API_KEY,
 };
 
 module.exports = { env };

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>CineLink Moderation</title>
+  <link rel="stylesheet" href="admin.css">
+</head>
+<body>
+  <main id="login" class="login hidden">
+    <form id="login-form" class="card login-card" autocomplete="on">
+      <h1>CineLink Moderation</h1>
+      <p class="muted">Sign in with a moderator or admin account.</p>
+      <label>Email <input id="email" type="email" autocomplete="username" required></label>
+      <label>Password <input id="password" type="password" autocomplete="current-password" required></label>
+      <p id="login-error" class="error" role="alert"></p>
+      <button type="submit" class="btn primary" id="login-btn">Sign in</button>
+    </form>
+  </main>
+
+  <div id="app" class="hidden">
+    <header class="topbar">
+      <strong>CineLink Moderation</strong>
+      <nav class="tabs" role="tablist">
+        <button class="tab active" data-tab="queue" role="tab">Queue <span id="queue-count" class="badge"></span></button>
+        <button class="tab" data-tab="audit" role="tab">Audit log</button>
+      </nav>
+      <span class="spacer"></span>
+      <span id="who" class="muted small"></span>
+      <button id="signout" class="btn small">Sign out</button>
+    </header>
+
+    <section id="view-queue" class="split">
+      <aside class="pane list-pane">
+        <div class="pane-head">
+          <span class="muted small" id="queue-meta"></span>
+          <button id="refresh" class="btn small">Refresh</button>
+        </div>
+        <div id="queue-list" class="queue-list"></div>
+      </aside>
+      <section class="pane detail-pane" id="detail">
+        <div class="empty">Select a reported list to review it.</div>
+      </section>
+    </section>
+
+    <section id="view-audit" class="audit hidden">
+      <div id="audit-body"></div>
+    </section>
+  </div>
+
+  <div id="toast" class="toast hidden" role="status"></div>
+  <script src="admin.js"></script>
+</body>
+</html>
