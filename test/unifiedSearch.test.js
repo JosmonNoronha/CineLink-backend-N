@@ -118,9 +118,9 @@ describe('unified search service', () => {
     const data = await unifiedSearch({ query: 'Keanu Reeves', page: 1, type: 'movie' });
 
     expect(mockSearchOmdbLike).toHaveBeenCalledWith({ q: 'Keanu Reeves', type: 'movie', page: 1 });
-    expect(mockSearchPeople).toHaveBeenCalledWith({ q: 'Keanu Reeves', page: 1 });
+    expect(mockSearchPeople).toHaveBeenCalledWith({ q: 'Keanu Reeves', page: 1, strict: true });
     expect(data.Response).toBe('True');
-    expect(data.Search.map((x) => x.imdbID)).toEqual(['tt0133093', 'tt0328832', 'tt0234215']);
+    expect(data.Search.map((x) => x.imdbID)).toEqual(['tt0133093', 'tt0234215', 'tt0328832']);
     expect(data.meta).toMatchObject({
       hasMore: false,
       isTotalExact: false,

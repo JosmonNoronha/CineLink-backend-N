@@ -33,6 +33,8 @@ const {
 describe('tmdb compat service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // searchOmdbLike loads movie and tv genre maps; default both to empty
+    mockGetGenreMap.mockResolvedValue({});
   });
 
   test('resolveToTmdb handles tmdb, imdb, numeric, and invalid ids', async () => {

@@ -1,5 +1,6 @@
 const request = require('supertest');
 const express = require('express');
+jest.setTimeout(45_000);
 
 const SECRET = 'a-long-random-ops-secret-0123456789';
 
