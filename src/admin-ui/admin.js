@@ -87,14 +87,16 @@
   }
 
   // ── API ──
-  async function api(path, opts = {}, retried = false) {
+  const api = (path, opts) => call('/admin/moderation' + path, opts);
+  const analytics = (path) => call('/analytics' + path);
+  async function call(path, opts = {}, retried = false) {
     if (Date.now() > state.expiresAt - 60000) await refresh();
-    const res = await fetch(state.cfg.apiBase + '/admin/moderation' + path, {
+    const res = await fetch(state.cfg.apiBase + path, {
       method: opts.method || 'GET',
       headers: { Authorization: 'Bearer ' + state.idToken, 'Content-Type': 'application/json' },
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
-    if (res.status === 401 && !retried) { await refresh(); return api(path, opts, true); }
+    if (res.status === 401 && !retried) { await refresh(); return call(path, opts, true); }
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const err = new Error(data.error?.userMessage || data.error?.message || data.error || 'Request failed (' + res.status + ')');
@@ -221,11 +223,72 @@
     }
   }
 
+
+  // ── overview (admins) ──
+  const num = (n) => Number(n || 0).toLocaleString();
+  const pct = (n) => Number(n || 0).toFixed(1) + '%';
+  function bar(value, max, tone) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'bar ' + (tone || ''));
+    svg.setAttribute('viewBox', '0 0 100 6');
+    svg.setAttribute('preserveAspectRatio', 'none');
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100'); bg.setAttribute('height', '6'); bg.setAttribute('class', 'bar-bg');
+    const fg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    fg.setAttribute('width', String(max > 0 ? Math.max(1, Math.min(100, (value / max) * 100)) : 0)); fg.setAttribute('height', '6'); fg.setAttribute('class', 'bar-fg');
+    svg.append(bg, fg);
+    return svg;
+  }
+  const stat = (label, value, sub) => el('div', { class: 'stat' }, el('div', { class: 'stat-label', text: label }), el('div', { class: 'stat-value', text: value }), sub && el('div', { class: 'muted small', text: sub }));
+  const section = (title, ...kids) => el('div', { class: 'card section' }, el('h3', { text: title }), ...kids);
+  const simpleTable = (heads, rows) => el('table', null, el('thead', null, el('tr', null, heads.map((h) => el('th', { text: h })))), el('tbody', null, rows.map((r) => el('tr', null, r.map((c) => el('td', null, c))))));
+  const itemName = (i) => i.title || i.name || i.data || (i.id != null ? '#' + i.id : '(unknown)');
+
+  async function loadOverview() {
+    const body = clear($('overview-body'));
+    body.append(el('div', { class: 'empty', text: 'Loading…' }));
+    try {
+      const [ov, perf, searches, content] = await Promise.all([
+        analytics('/overview'), analytics('/performance'), analytics('/popular-searches?limit=15'), analytics('/popular-content?limit=10'),
+      ]);
+      clear(body);
+      body.append(el('div', { class: 'stats' },
+        stat('Requests', num(ov.totalRequests), 'since counters started'),
+        stat('Errors', num(ov.totalErrors), ov.errorRate + '% error rate'),
+        stat('Cache hit rate', ov.cache.hitRate + '%', num(ov.cache.hits) + ' hits / ' + num(ov.cache.misses) + ' misses'),
+        stat('Active users today', num(ov.engagement && ov.engagement.activeUsersToday))));
+
+      const codes = Object.entries(ov.statusCodes || {}).map(([c, n]) => [c, Number(n) || 0]).sort((a, b) => a[0].localeCompare(b[0]));
+      const maxCode = Math.max(0, ...codes.map((c) => c[1]));
+      const eps = Object.entries(perf.endpoints || {}).map(([name, m]) => ({ name, ...m })).sort((a, b) => b.requests - a.requests).slice(0, 15);
+      const maxReq = Math.max(0, ...eps.map((e) => e.requests));
+
+      body.append(el('div', { class: 'grid2' },
+        section('Status codes', codes.length ? simpleTable(['Code', 'Count', ''], codes.map(([c, n]) => [c, num(n), bar(n, maxCode, /^[45]/.test(c) ? 'bad' : '')])) : el('p', { class: 'muted', text: 'No data yet.' })),
+        section('Busiest endpoints', eps.length ? simpleTable(['Endpoint', 'Requests', 'Avg ms', 'Errors'], eps.map((e) => [e.name, [num(e.requests), bar(e.requests, maxReq)], String(e.averageResponseTime), e.errors ? e.errors + ' (' + e.errorRate + '%)' : '0'])) : el('p', { class: 'muted', text: 'No data yet.' }))));
+
+      const ps = searches.searches || [];
+      const movies = content.movies || [];
+      const tv = content.tvShows || [];
+      const list = (rows, label) => (rows.length ? simpleTable([label, 'Count'], rows) : el('p', { class: 'muted', text: 'No data yet.' }));
+      body.append(el('div', { class: 'grid3' },
+        section('Popular searches', list(ps.map((s) => [s.query, num(s.score)]), 'Search')),
+        section('Popular movies', list(movies.map((m) => [itemName(m), num(m.views)]), 'Title')),
+        section('Popular TV', list(tv.map((m) => [itemName(m), num(m.views)]), 'Title'))));
+      body.append(el('p', { class: 'muted small', text: 'Counts are totals since the counters started (they reset if Redis is cleared or the server restarts without Redis). Updated ' + new Date(ov.timestamp).toLocaleTimeString() + '.' }));
+    } catch (e) {
+      clear(body);
+      if (e.status === 403) body.append(el('div', { class: 'empty', text: 'The overview is for admins only.' }));
+      else { body.append(el('div', { class: 'empty', text: 'Could not load the overview.' })); handleError(e); }
+    }
+  }
+
   function showTab(name) {
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
     $('view-queue').classList.toggle('hidden', name !== 'queue');
     $('view-audit').classList.toggle('hidden', name !== 'audit');
-    if (name === 'audit') loadAudit(); else loadQueue();
+    $('view-overview').classList.toggle('hidden', name !== 'overview');
+    if (name === 'audit') loadAudit(); else if (name === 'overview') loadOverview(); else loadQueue();
   }
 
   function handleError(e) {
@@ -258,6 +321,10 @@
     });
     $('signout').addEventListener('click', signOut);
     $('refresh').addEventListener('click', loadQueue);
+    $('overview-refresh').addEventListener('click', loadOverview);
+    if (typeof state.cfg.grafanaUrl === 'string' && /^https:\/\//.test(state.cfg.grafanaUrl)) {
+      const g = $('grafana'); g.href = state.cfg.grafanaUrl; g.classList.remove('hidden');
+    }
     document.querySelectorAll('.tab').forEach((t) => t.addEventListener('click', () => showTab(t.dataset.tab)));
 
     let rt = null;

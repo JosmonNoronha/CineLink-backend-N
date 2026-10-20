@@ -31,7 +31,7 @@ describe('admin panel', () => {
   test('config.json exposes only the public web key and API prefix', async () => {
     const { app } = appWith({ FIREBASE_WEB_API_KEY: 'abc', API_PREFIX: '/api', OPS_SECRET: 'never-leak' });
     const res = await request(app).get('/admin/config.json').expect(200);
-    expect(res.body).toEqual({ apiKey: 'abc', apiBase: '/api' });
+    expect(res.body).toEqual({ apiKey: 'abc', apiBase: '/api', grafanaUrl: null });
     expect(JSON.stringify(res.body)).not.toMatch(/never-leak/);
   });
 

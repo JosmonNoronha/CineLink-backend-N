@@ -24,9 +24,11 @@
       <strong>CineLink Moderation</strong>
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="queue" role="tab">Queue <span id="queue-count" class="badge"></span></button>
+        <button class="tab" data-tab="overview" role="tab">Overview</button>
         <button class="tab" data-tab="audit" role="tab">Audit log</button>
       </nav>
       <span class="spacer"></span>
+      <a id="grafana" class="btn small hidden" target="_blank" rel="noopener noreferrer">Grafana ↗</a>
       <span id="who" class="muted small"></span>
       <button id="signout" class="btn small">Sign out</button>
     </header>
@@ -42,6 +44,11 @@
       <section class="pane detail-pane" id="detail">
         <div class="empty">Select a reported list to review it.</div>
       </section>
+    </section>
+
+    <section id="view-overview" class="overview hidden">
+      <div class="overview-head"><h2>Overview</h2><button id="overview-refresh" class="btn small">Refresh</button></div>
+      <div id="overview-body"></div>
     </section>
 
     <section id="view-audit" class="audit hidden">

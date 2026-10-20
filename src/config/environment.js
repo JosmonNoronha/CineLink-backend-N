@@ -69,6 +69,8 @@ const schema = Joi.object({
   AUTO_HIDE_REPORT_THRESHOLD: Joi.number().integer().min(0).default(3),
   // Firebase Web API key (public by design). Setting it turns on the /admin moderation panel.
   FIREBASE_WEB_API_KEY: Joi.string().allow('').optional(),
+  // Optional https link shown in the admin panel header (your Grafana dashboard).
+  GRAFANA_URL: Joi.string().uri({ scheme: ['https'] }).allow('').optional(),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -185,6 +187,7 @@ const env = {
   POPULAR_SEARCH_MIN_COUNT: value.POPULAR_SEARCH_MIN_COUNT,
   AUTO_HIDE_REPORT_THRESHOLD: value.AUTO_HIDE_REPORT_THRESHOLD,
   FIREBASE_WEB_API_KEY: value.FIREBASE_WEB_API_KEY,
+  GRAFANA_URL: value.GRAFANA_URL,
 };
 
 module.exports = { env };

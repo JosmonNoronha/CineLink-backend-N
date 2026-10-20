@@ -43,7 +43,7 @@ function createAdminPanelRouter(env) {
   });
 
   router.get('/config.json', (_req, res) =>
-    res.json({ apiKey: env.FIREBASE_WEB_API_KEY, apiBase: env.API_PREFIX }),
+    res.json({ apiKey: env.FIREBASE_WEB_API_KEY, apiBase: env.API_PREFIX, grafanaUrl: env.GRAFANA_URL || null }),
   );
 
   router.use(express.static(UI_DIR, { index: 'index.html', maxAge: 0, fallthrough: true }));
