@@ -1,5 +1,9 @@
 const TokenCacheService = require('../src/services/tokenCache');
 
+async function* asyncKeys(keys) {
+  for (const k of keys) yield k;
+}
+
 describe('TokenCacheService', () => {
   const mockToken =
     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJ1c2VyMTIzIiwibmFtZSI6IkpvaG4iLCJleHAiOjk5OTk5OTk5OTl9.sig';
@@ -22,7 +26,7 @@ describe('TokenCacheService', () => {
         get: jest.fn(),
         set: jest.fn(),
         del: jest.fn(),
-        keys: jest.fn(),
+        scanIterator: jest.fn(),
       };
 
       service = new TokenCacheService(mockRedisClient);
@@ -90,22 +94,50 @@ describe('TokenCacheService', () => {
     });
 
     it('clears all caches', async () => {
-      mockRedisClient.keys.mockResolvedValueOnce(['key1']).mockResolvedValueOnce(['key2']);
+      mockRedisClient.scanIterator
+        .mockReturnValueOnce(asyncKeys(['key1']))
+        .mockReturnValueOnce(asyncKeys(['key2']));
       mockRedisClient.del.mockResolvedValue(2);
 
       await service.clear();
 
-      expect(mockRedisClient.del).toHaveBeenCalled();
+      expect(mockRedisClient.del).toHaveBeenCalledWith('key1', 'key2');
     });
 
     it('returns cache statistics', async () => {
-      mockRedisClient.keys.mockResolvedValueOnce(['key1', 'key2']).mockResolvedValueOnce(['key3']);
+      mockRedisClient.scanIterator
+        .mockReturnValueOnce(asyncKeys(['key1', 'key2']))
+        .mockReturnValueOnce(asyncKeys(['key3']));
 
       const stats = await service.getStats();
 
       expect(stats.redis.available).toBe(true);
       expect(stats.redis.size).toBe(3);
       expect(typeof stats.inMemory.size).toBe('number');
+    });
+  });
+
+  describe('with a client getter (survives reconnects)', () => {
+    it('always uses the current client, never a stale one', async () => {
+      const dead = { isReady: false, get: jest.fn(), set: jest.fn() };
+      const live = { isReady: true, get: jest.fn().mockResolvedValue(null), set: jest.fn().mockResolvedValue('OK') };
+      let current = dead;
+      const service = new TokenCacheService(() => current);
+
+      await service.cacheToken(mockToken, mockDecoded);
+      expect(dead.set).not.toHaveBeenCalled();
+      expect(live.set).not.toHaveBeenCalled();
+
+      current = live; // the app reconnected
+      await service.cacheToken(mockToken, mockDecoded);
+      expect(live.set).toHaveBeenCalledTimes(1);
+    });
+
+    it('works while Redis is off (getter returns null)', async () => {
+      const service = new TokenCacheService(() => null);
+      await service.cacheToken(mockToken, mockDecoded);
+      await expect(service.getToken(mockToken)).resolves.toEqual(mockDecoded);
+      await expect(service.isRevoked(mockToken)).resolves.toBe(false);
     });
   });
 

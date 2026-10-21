@@ -2,6 +2,12 @@ const { getRedisClient, isRedisReady } = require('../../config/redis');
 const { getFirestore } = require('../../config/firebase');
 const { logger } = require('../../utils/logger');
 const mem = require('./memoryStore');
+const buffer = require('./buffer');
+
+buffer.configure(() => (isRedisReady() ? getRedisClient() : null));
+
+/** Write any batched increments now (reads call this first so numbers are current). */
+const flushBuffered = () => buffer.flush();
 
 /**
  * Store metrics in Redis with TTL
@@ -36,18 +42,8 @@ async function incrementCounter(key, amount = 1) {
     return mem.incrementCounter(key, amount);
   }
 
-  try {
-    const redis = getRedisClient();
-    if (!redis || !redis.incrBy) {
-      logger.debug('Redis client not fully initialized');
-      return false;
-    }
-    await redis.incrBy(key, amount);
-    return true;
-  } catch (error) {
-    logger.error('Failed to increment counter', { key, error: error.message });
-    return false;
-  }
+  buffer.counter(key, amount);
+  return true;
 }
 
 /**
@@ -60,6 +56,7 @@ async function getMetric(key) {
   }
 
   try {
+    await flushBuffered();
     const redis = getRedisClient();
     const value = await redis.get(key);
     if (!value) return null;
@@ -145,14 +142,8 @@ async function incrementSortedSet(key, member, amount = 1) {
     return mem.zIncr(key, member, amount);
   }
 
-  try {
-    const redis = getRedisClient();
-    await redis.zIncrBy(key, amount, member);
-    return true;
-  } catch (error) {
-    logger.error('Failed to increment sorted set', { key, error: error.message });
-    return false;
-  }
+  buffer.zincr(key, member, amount);
+  return true;
 }
 
 /**
@@ -163,14 +154,8 @@ async function trimSortedSet(key, keep) {
     return mem.zTrim(key, keep);
   }
 
-  try {
-    const redis = getRedisClient();
-    await redis.zRemRangeByRank(key, 0, -(keep + 1));
-    return true;
-  } catch (error) {
-    logger.error('Failed to trim sorted set', { key, error: error.message });
-    return false;
-  }
+  buffer.trim(key, keep);
+  return true;
 }
 
 /**
@@ -184,6 +169,7 @@ async function getTopFromSortedSet(key, limit = 10) {
   }
 
   try {
+    await flushBuffered();
     const redis = getRedisClient();
     return await redis.zRange(key, 0, limit - 1, { REV: true, WITHSCORES: true });
   } catch (error) {
@@ -203,18 +189,8 @@ async function incrementHashField(key, field, amount = 1) {
     return mem.incrementHashField(key, field, amount);
   }
 
-  try {
-    const redis = getRedisClient();
-    if (!redis || !redis.hIncrBy) {
-      logger.debug('Redis client not fully initialized');
-      return false;
-    }
-    await redis.hIncrBy(key, field, amount);
-    return true;
-  } catch (error) {
-    logger.error('Failed to increment hash field', { key, field, error: error.message });
-    return false;
-  }
+  buffer.hash(key, field, amount);
+  return true;
 }
 
 /**
@@ -227,6 +203,7 @@ async function getHash(key) {
   }
 
   try {
+    await flushBuffered();
     const redis = getRedisClient();
     return await redis.hGetAll(key);
   } catch (error) {
@@ -238,20 +215,14 @@ async function getHash(key) {
 /** Add a member to a set (used for unique active users per day). */
 async function addToSet(key, member, ttl = 604800) {
   if (!isRedisReady()) return mem.sAdd(key, member);
-  try {
-    const redis = getRedisClient();
-    await redis.sAdd(key, member);
-    await redis.expire(key, ttl);
-    return true;
-  } catch (error) {
-    logger.error('Failed to add to set', { key, error: error.message });
-    return false;
-  }
+  buffer.set(key, member, ttl);
+  return true;
 }
 
 async function getSetSize(key) {
   if (!isRedisReady()) return mem.sCard(key);
   try {
+    await flushBuffered();
     return await getRedisClient().sCard(key);
   } catch (error) {
     logger.error('Failed to get set size', { key, error: error.message });
@@ -266,6 +237,7 @@ module.exports = {
   addToSet,
   getSetSize,
   getStorageMode,
+  flushBuffered,
   storeMetric,
   incrementCounter,
   getMetric,

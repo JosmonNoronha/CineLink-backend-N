@@ -10,8 +10,8 @@ let tokenCacheService = null;
 
 function getTokenCacheService() {
   if (!tokenCacheService) {
-    const redisClient = getRedisClient();
-    tokenCacheService = new TokenCacheService(redisClient);
+    // Pass the getter, not the client: the client can change after a reconnect.
+    tokenCacheService = new TokenCacheService(getRedisClient);
   }
   return tokenCacheService;
 }

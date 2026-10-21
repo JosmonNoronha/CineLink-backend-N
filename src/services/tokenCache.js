@@ -8,12 +8,35 @@ const { logger } = require('../utils/logger');
  */
 
 class TokenCacheService {
+  /**
+   * @param redisClient a client, or (preferred) a function returning the current client.
+   *   A function is called on every use, so a reconnect can never leave this holding a dead client.
+   */
   constructor(redisClient) {
-    this.redis = redisClient;
+    this._redisSource = redisClient;
     this.inMemoryFallback = new Map();
     this.TOKEN_CACHE_PREFIX = 'auth:token:';
     this.TOKEN_REVOCATION_PREFIX = 'auth:revoked:';
     this.FALLBACK_TTL = 5 * 60 * 1000; // 5 minutes for in-memory fallback
+  }
+
+  get redis() {
+    return typeof this._redisSource === 'function' ? this._redisSource() : this._redisSource;
+  }
+
+  set redis(value) {
+    this._redisSource = value;
+  }
+
+  /** Every key under a prefix, using SCAN (KEYS blocks the server and is discouraged on hosted Redis). */
+  async _keysWithPrefix(prefix) {
+    const client = this.redis;
+    const out = [];
+    for await (const batch of client.scanIterator({ MATCH: `${prefix}*`, COUNT: 200 })) {
+      if (Array.isArray(batch)) out.push(...batch);
+      else out.push(batch);
+    }
+    return out;
   }
 
   /**
@@ -145,8 +168,8 @@ class TokenCacheService {
   async clear() {
     try {
       if (this.redis && this.redis.isReady) {
-        const tokenKeys = await this.redis.keys(`${this.TOKEN_CACHE_PREFIX}*`);
-        const revocationKeys = await this.redis.keys(`${this.TOKEN_REVOCATION_PREFIX}*`);
+        const tokenKeys = await this._keysWithPrefix(this.TOKEN_CACHE_PREFIX);
+        const revocationKeys = await this._keysWithPrefix(this.TOKEN_REVOCATION_PREFIX);
         const allKeys = [...tokenKeys, ...revocationKeys];
         if (allKeys.length > 0) {
           await this.redis.del(...allKeys);
@@ -166,8 +189,8 @@ class TokenCacheService {
     let redisSize = 0;
     try {
       if (this.redis && this.redis.isReady) {
-        const tokenKeys = await this.redis.keys(`${this.TOKEN_CACHE_PREFIX}*`);
-        const revocationKeys = await this.redis.keys(`${this.TOKEN_REVOCATION_PREFIX}*`);
+        const tokenKeys = await this._keysWithPrefix(this.TOKEN_CACHE_PREFIX);
+        const revocationKeys = await this._keysWithPrefix(this.TOKEN_REVOCATION_PREFIX);
         redisSize = tokenKeys.length + revocationKeys.length;
       }
     } catch (error) {

@@ -33,6 +33,7 @@ class AnalyticsService {
       clearInterval(this.flushInterval);
     }
     await this.flushEvents();
+    await storage.flushBuffered();
     logger.info('Analytics service shutdown');
   }
 

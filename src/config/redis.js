@@ -2,191 +2,101 @@ const { createClient } = require('redis');
 const { env } = require('./environment');
 const { logger } = require('../utils/logger');
 
-let redisClient;
-let redisReady = false;
-let redisAvailable = false;
-let reconnectTimer = null;
-let reconnectInProgress = false;
-let lastReconnectAttemptAt = 0;
+/*
+  One Redis client for the life of the process.
 
-const redisConnectTimeoutMs = Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 3000);
-const redisReconnectCooldownMs = Number(process.env.REDIS_RECONNECT_COOLDOWN_MS || 60_000);
+  The old version created a brand-new client after every drop and tore down the healthy one whenever
+  a single command failed. Anything that had grabbed the old client (the token cache did) was left
+  holding a dead connection. Now node-redis reconnects the SAME client with backoff, so references
+  stay valid, and commands fail fast while disconnected so callers fall back to memory.
+*/
 
-function setRedisAvailability(available) {
-  redisAvailable = available;
-  if (!available) {
-    redisReady = false;
-  }
+let redisClient = null;
+
+const connectTimeoutMs = Number(process.env.REDIS_CONNECT_TIMEOUT_MS || 10_000);
+const ERROR_LOG_EVERY_MS = 30_000;
+let lastErrorLogAt = 0;
+
+/** 250ms, 500ms, 1s ... capped at 15s, plus jitter. Never gives up. */
+function reconnectStrategy(retries) {
+  const base = Math.min(250 * 2 ** Math.min(retries, 6), 15_000);
+  return base + Math.floor(Math.random() * 250);
 }
 
-function clearReconnectTimer() {
-  if (reconnectTimer) {
-    clearTimeout(reconnectTimer);
-    reconnectTimer = null;
-  }
+function isRedisReady() {
+  return !!redisClient && redisClient.isReady === true;
 }
 
-function scheduleReconnectAttempt(reason = 'unknown', force = false) {
-  if (!env.REDIS_URL || redisAvailable || reconnectTimer || (!force && reconnectInProgress)) {
-    return;
-  }
-
-  const now = Date.now();
-  const elapsed = now - lastReconnectAttemptAt;
-  const delayMs = Math.max(0, redisReconnectCooldownMs - elapsed);
-
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    void attemptReconnect('scheduled');
-  }, delayMs);
-
-  if (typeof reconnectTimer.unref === 'function') {
-    reconnectTimer.unref();
-  }
-
-  logger.info('Redis reconnect scheduled', {
-    reason,
-    delayMs,
-    cooldownMs: redisReconnectCooldownMs,
-  });
+/** The live client, or null while Redis is off or reconnecting. Call this each time; do not keep the result. */
+function getRedisClient() {
+  return isRedisReady() ? redisClient : null;
 }
 
-async function cleanupRedisClient() {
-  if (!redisClient) return;
-
-  try {
-    if (redisClient.isOpen && typeof redisClient.disconnect === 'function') {
-      redisClient.disconnect();
-    }
-  } catch (_e) {
-    // no-op
-  }
-
-  redisClient = null;
-}
-
-function markRedisUnavailable(reason = 'runtime-error') {
-  setRedisAvailability(false);
-  scheduleReconnectAttempt(reason);
-}
-
-async function attemptReconnect(reason = 'manual') {
-  if (reconnectInProgress || redisAvailable || !env.REDIS_URL) {
-    return redisClient;
-  }
-
-  reconnectInProgress = true;
-  lastReconnectAttemptAt = Date.now();
-  logger.info('Attempting Redis reconnect', { reason });
-
-  try {
-    await cleanupRedisClient();
-    const client = await initializeRedis();
-    if (isRedisReady()) {
-      logger.info('Redis reconnect succeeded; cache restored');
-    }
-    return client;
-  } catch (_e) {
-    return null;
-  } finally {
-    reconnectInProgress = false;
-    if (!isRedisReady()) {
-      scheduleReconnectAttempt('reconnect-not-ready', true);
-    }
-  }
+/**
+ * Kept so existing callers keep working. A failed command no longer disconnects anything:
+ * the client reconnects by itself when the socket really drops.
+ */
+function markRedisUnavailable(reason = 'command-error') {
+  logger.debug('Redis command failed (connection left as is)', { reason });
 }
 
 async function initializeRedis() {
   if (!env.REDIS_URL) {
     logger.info('Redis URL not configured, skipping Redis initialization');
-    clearReconnectTimer();
-    setRedisAvailability(false);
     return null;
   }
+  if (redisClient) return isRedisReady() ? redisClient : null;
 
-  if (redisClient && isRedisReady()) return redisClient;
-
-  if (redisClient && !isRedisReady()) {
-    await cleanupRedisClient();
+  const redisUrl = env.REDIS_URL.trim();
+  if (!redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
+    logger.error('Redis URL must start with redis:// or rediss://');
+    return null;
+  }
+  if (redisUrl.startsWith('redis://') && !/^redis:\/\/(127\.0\.0\.1|localhost)/.test(redisUrl)) {
+    logger.warn('Redis URL uses redis:// (no TLS). Hosted Redis such as Upstash needs rediss://');
   }
 
-  try {
-    // Trim and validate URL format
-    const redisUrl = env.REDIS_URL.trim();
+  const sanitizedUrl = redisUrl.replace(/\/\/[^@/]*@/, '//****@');
+  logger.info(`Attempting Redis connection to: ${sanitizedUrl}`);
 
-    // Basic validation
-    if (!redisUrl.startsWith('redis://') && !redisUrl.startsWith('rediss://')) {
-      logger.error('Redis URL must start with redis:// or rediss://');
-      setRedisAvailability(false);
-      return null;
-    }
+  const client = createClient({
+    url: redisUrl,
+    disableOfflineQueue: true, // while disconnected, commands fail at once instead of piling up
+    socket: { connectTimeout: connectTimeoutMs, reconnectStrategy },
+  });
+  redisClient = client;
 
-    // Log sanitized URL (hide password)
-    const sanitizedUrl = redisUrl.replace(/:([^@]+)@/, ':****@');
-    logger.info(`Attempting Redis connection to: ${sanitizedUrl}`);
-
-    redisClient = createClient({
-      url: redisUrl,
-      socket: {
-        connectTimeout: redisConnectTimeoutMs,
-        reconnectStrategy: false,
-      },
-    });
-    setRedisAvailability(true);
-
-    redisClient.on('error', (err) => {
-      setRedisAvailability(false);
-      redisReady = false;
+  client.on('error', (err) => {
+    const now = Date.now();
+    if (now - lastErrorLogAt >= ERROR_LOG_EVERY_MS) {
+      lastErrorLogAt = now;
       logger.warn(`Redis error: ${err.message}`);
-      scheduleReconnectAttempt('client-error');
+    }
+  });
+  client.on('ready', () => logger.info('Redis ready'));
+  client.on('end', () => logger.warn('Redis connection closed'));
+  client.on('reconnecting', () => logger.debug('Redis reconnecting'));
+
+  // connect() keeps retrying in the background, so it may never settle. Do not wait forever:
+  // the app starts without Redis and picks it up as soon as the client becomes ready.
+  const connecting = client.connect().catch((error) => {
+    logger.warn('Redis connect failed', { error: error.message });
+  });
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve('timeout'), connectTimeoutMs);
+    if (typeof timer.unref === 'function') timer.unref();
+  });
+  const result = await Promise.race([connecting.then(() => 'done'), timeout]);
+  clearTimeout(timer);
+
+  if (result === 'timeout' && !isRedisReady()) {
+    logger.warn('Redis not ready yet, continuing without it; the client keeps retrying', {
+      timeoutMs: connectTimeoutMs,
     });
-
-    redisClient.on('end', () => {
-      setRedisAvailability(false);
-      logger.warn('Redis connection closed');
-      scheduleReconnectAttempt('client-end');
-    });
-
-    redisClient.on('ready', () => {
-      redisReady = true;
-      setRedisAvailability(true);
-      logger.info('Redis ready');
-    });
-
-    redisClient.on('connect', () => {
-      logger.info('Redis connecting...');
-    });
-
-    await Promise.race([
-      redisClient.connect(),
-      new Promise((_, reject) => {
-        setTimeout(
-          () => reject(new Error(`Redis connect timeout after ${redisConnectTimeoutMs}ms`)),
-          redisConnectTimeoutMs
-        );
-      }),
-    ]);
-
-    return redisClient;
-  } catch (error) {
-    logger.warn('Redis unavailable, continuing without Redis', { error: error.message });
-    await cleanupRedisClient();
-    setRedisAvailability(false);
-    scheduleReconnectAttempt('init-failed');
     return null;
   }
-}
-
-function getRedisClient() {
-  if (!isRedisReady()) {
-    scheduleReconnectAttempt('client-requested-while-unavailable');
-    return null;
-  }
-  return redisClient;
-}
-
-function isRedisReady() {
-  return redisAvailable && !!redisClient && redisClient.isOpen && redisReady;
+  return isRedisReady() ? client : null;
 }
 
 module.exports = { initializeRedis, getRedisClient, isRedisReady, markRedisUnavailable };

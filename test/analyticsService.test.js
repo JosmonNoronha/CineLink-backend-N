@@ -20,6 +20,7 @@ jest.mock('../src/services/analytics/events', () => ({
 
 jest.mock('../src/services/analytics/storage', () => ({
   storeEvent: (...args) => mockStoreEvent(...args),
+  flushBuffered: jest.fn().mockResolvedValue(0),
 }));
 
 jest.mock('../src/services/analytics/metrics', () => ({

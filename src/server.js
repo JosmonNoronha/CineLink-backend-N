@@ -35,6 +35,15 @@ async function gracefulShutdown(server, signal, err) {
       logger.warn('Sentry flush skipped or failed:', e && e.message ? e.message : String(e));
     }
 
+    // Write batched analytics counters before Redis goes away
+    try {
+      // eslint-disable-next-line global-require
+      const { analyticsService } = require('./services/analytics');
+      await analyticsService.shutdown();
+    } catch (e) {
+      logger.warn('Analytics flush skipped or failed:', e && e.message ? e.message : String(e));
+    }
+
     // Disconnect Redis if it's ready
     try {
       // eslint-disable-next-line global-require
