@@ -95,12 +95,21 @@ describe('analytics storage', () => {
   });
 
   test('sorted set and hash helpers handle redis ready/not ready', async () => {
+    // Without Redis the counters live in memory instead of being dropped.
     mockIsRedisReady.mockReturnValue(false);
-    await expect(storage.addToSortedSet('z', 1, 'm')).resolves.toBe(false);
-    await expect(storage.incrementSortedSet('z', 'm')).resolves.toBe(false);
-    await expect(storage.trimSortedSet('z', 10)).resolves.toBe(false);
-    await expect(storage.getTopFromSortedSet('z', 3)).resolves.toEqual([]);
-    await expect(storage.getHash('h')).resolves.toEqual({});
+    expect(storage.getStorageMode()).toBe('memory');
+    await storage.incrementSortedSet('zmem', 'a');
+    await storage.incrementSortedSet('zmem', 'a');
+    await storage.incrementSortedSet('zmem', 'b');
+    await expect(storage.getTopFromSortedSet('zmem', 3)).resolves.toEqual([
+      { value: 'a', score: 2 },
+      { value: 'b', score: 1 },
+    ]);
+    await storage.trimSortedSet('zmem', 1);
+    await expect(storage.getTopFromSortedSet('zmem', 3)).resolves.toEqual([{ value: 'a', score: 2 }]);
+    await storage.incrementHashField('hmem', 'f', 3);
+    await expect(storage.getHash('hmem')).resolves.toEqual({ f: '3' });
+    await expect(storage.getHash('never-written')).resolves.toEqual({});
 
     const redis = {
       zAdd: jest.fn().mockResolvedValue(1),
@@ -112,6 +121,7 @@ describe('analytics storage', () => {
       incrBy: jest.fn().mockResolvedValue(1),
     };
     mockIsRedisReady.mockReturnValue(true);
+    expect(storage.getStorageMode()).toBe('redis');
     mockGetRedisClient.mockReturnValue(redis);
 
     await expect(storage.addToSortedSet('z', 1, 'm')).resolves.toBe(true);

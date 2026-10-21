@@ -252,6 +252,9 @@
         analytics('/overview'), analytics('/performance'), analytics('/popular-searches?limit=15'), analytics('/popular-content?limit=10'),
       ]);
       clear(body);
+      if (ov.storage === 'memory') {
+        body.append(el('div', { class: 'notice', text: 'These numbers are kept in server memory because Redis is not connected. They reset whenever the server restarts or goes to sleep. Set REDIS_URL on Render to keep them.' }));
+      }
       body.append(el('div', { class: 'stats' },
         stat('Requests', num(ov.totalRequests), 'since counters started'),
         stat('Errors', num(ov.totalErrors), ov.errorRate + '% error rate'),

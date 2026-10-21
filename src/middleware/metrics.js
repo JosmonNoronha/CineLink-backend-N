@@ -1,16 +1,23 @@
 const responseTime = require('response-time');
 const { metrics } = require('../services/analytics');
 const { logger } = require('../utils/logger');
-const { isRedisReady } = require('../config/redis');
 const { httpRequestDuration, httpRequestTotal } = require('../routes/metrics');
 
 /**
- * Middleware to track API performance metrics
- * Only tracks if Redis is available to avoid performance impact
+ * Label for a request: the matched route pattern, or one fixed label for anything unmatched.
+ * Raw paths must never be used: bots hitting random URLs would create endless new labels.
+ */
+function routeLabelOf(req) {
+  return req.route?.path ? `${req.baseUrl || ''}${req.route.path}` : 'unmatched';
+}
+
+/**
+ * Middleware to track API performance metrics.
+ * Counters live in Redis when it is available and in memory otherwise.
  */
 function createMetricsMiddleware() {
   return responseTime(async (req, res, time) => {
-    const routeLabel = `${req.baseUrl || ''}${req.route?.path || req.path}`;
+    const routeLabel = routeLabelOf(req);
     const durationSeconds = Number(time) / 1000;
     const statusCode = String(res.statusCode);
 
@@ -33,13 +40,8 @@ function createMetricsMiddleware() {
       logger.debug('Prometheus metrics tracking failed', { error: error.message });
     }
 
-    // Skip analytics if Redis is not ready to avoid Firestore overhead
-    if (!isRedisReady()) {
-      return;
-    }
-
     try {
-      const endpoint = req.route?.path || req.path;
+      const endpoint = routeLabel;
       const method = req.method;
       const numericStatusCode = res.statusCode;
       const userId = req.user?.uid || null;
@@ -60,13 +62,11 @@ function createMetricsMiddleware() {
 
 /**
  * Middleware to track specific analytics events
- * Only tracks if Redis is available
- */
+ *  */
 function analyticsMiddleware(req, res, next) {
   // Add analytics helper to request object
   req.analytics = {
     trackSearch: async (query) => {
-      if (!isRedisReady()) return;
       try {
         const userId = req.user?.uid || null;
         await metrics.trackSearch(query, userId);
@@ -75,7 +75,6 @@ function analyticsMiddleware(req, res, next) {
       }
     },
     trackMovieView: async (movieId, title) => {
-      if (!isRedisReady()) return;
       try {
         const userId = req.user?.uid || null;
         await metrics.trackMovieView(movieId, title, userId);
@@ -84,7 +83,6 @@ function analyticsMiddleware(req, res, next) {
       }
     },
     trackTVView: async (tvId, title) => {
-      if (!isRedisReady()) return;
       try {
         const userId = req.user?.uid || null;
         await metrics.trackTVView(tvId, title, userId);

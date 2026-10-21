@@ -1,6 +1,7 @@
 const { getRedisClient, isRedisReady } = require('../../config/redis');
 const { getFirestore } = require('../../config/firebase');
 const { logger } = require('../../utils/logger');
+const mem = require('./memoryStore');
 
 /**
  * Store metrics in Redis with TTL
@@ -32,7 +33,7 @@ async function storeMetric(key, value, ttl = 604800) {
  */
 async function incrementCounter(key, amount = 1) {
   if (!isRedisReady()) {
-    return false;
+    return mem.incrementCounter(key, amount);
   }
 
   try {
@@ -55,7 +56,7 @@ async function incrementCounter(key, amount = 1) {
  */
 async function getMetric(key) {
   if (!isRedisReady()) {
-    return null;
+    return mem.getCounter(key);
   }
 
   try {
@@ -123,7 +124,7 @@ async function storeAggregatedData(date, data) {
  */
 async function addToSortedSet(key, score, member) {
   if (!isRedisReady()) {
-    return false;
+    return mem.zAdd(key, score, member);
   }
 
   try {
@@ -141,7 +142,7 @@ async function addToSortedSet(key, score, member) {
  */
 async function incrementSortedSet(key, member, amount = 1) {
   if (!isRedisReady()) {
-    return false;
+    return mem.zIncr(key, member, amount);
   }
 
   try {
@@ -159,7 +160,7 @@ async function incrementSortedSet(key, member, amount = 1) {
  */
 async function trimSortedSet(key, keep) {
   if (!isRedisReady()) {
-    return false;
+    return mem.zTrim(key, keep);
   }
 
   try {
@@ -179,7 +180,7 @@ async function trimSortedSet(key, keep) {
  */
 async function getTopFromSortedSet(key, limit = 10) {
   if (!isRedisReady()) {
-    return [];
+    return mem.zTop(key, limit);
   }
 
   try {
@@ -199,7 +200,7 @@ async function getTopFromSortedSet(key, limit = 10) {
  */
 async function incrementHashField(key, field, amount = 1) {
   if (!isRedisReady()) {
-    return false;
+    return mem.incrementHashField(key, field, amount);
   }
 
   try {
@@ -222,7 +223,7 @@ async function incrementHashField(key, field, amount = 1) {
  */
 async function getHash(key) {
   if (!isRedisReady()) {
-    return {};
+    return mem.getHash(key);
   }
 
   try {
@@ -234,7 +235,37 @@ async function getHash(key) {
   }
 }
 
+/** Add a member to a set (used for unique active users per day). */
+async function addToSet(key, member, ttl = 604800) {
+  if (!isRedisReady()) return mem.sAdd(key, member);
+  try {
+    const redis = getRedisClient();
+    await redis.sAdd(key, member);
+    await redis.expire(key, ttl);
+    return true;
+  } catch (error) {
+    logger.error('Failed to add to set', { key, error: error.message });
+    return false;
+  }
+}
+
+async function getSetSize(key) {
+  if (!isRedisReady()) return mem.sCard(key);
+  try {
+    return await getRedisClient().sCard(key);
+  } catch (error) {
+    logger.error('Failed to get set size', { key, error: error.message });
+    return 0;
+  }
+}
+
+/** Where the counters currently live. */
+const getStorageMode = () => (isRedisReady() ? 'redis' : 'memory');
+
 module.exports = {
+  addToSet,
+  getSetSize,
+  getStorageMode,
   storeMetric,
   incrementCounter,
   getMetric,

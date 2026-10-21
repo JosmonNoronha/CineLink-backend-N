@@ -109,3 +109,5 @@ th { font-size: 12px; color: var(--muted); font-weight: 600; }
 .bar-fg { fill: var(--accent); }
 .bar.bad .bar-fg { fill: var(--danger); }
 .btn { text-decoration: none; display: inline-block; }
+
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 12px; font-size: 13px; }

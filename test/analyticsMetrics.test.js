@@ -6,6 +6,10 @@ const mockTrimSortedSet = jest.fn();
 const mockGetMetric = jest.fn();
 const mockGetHash = jest.fn();
 const mockGetTopFromSortedSet = jest.fn();
+const mockAddToSet = jest.fn();
+const mockGetSetSize = jest.fn();
+let mockPromHits = 0;
+let mockPromMisses = 0;
 const mockGetRedisClient = jest.fn();
 const mockIsRedisReady = jest.fn();
 const mockLoggerWarn = jest.fn();
@@ -20,6 +24,15 @@ jest.mock('../src/services/analytics/storage', () => ({
   getMetric: (...args) => mockGetMetric(...args),
   getHash: (...args) => mockGetHash(...args),
   getTopFromSortedSet: (...args) => mockGetTopFromSortedSet(...args),
+  addToSet: (...args) => mockAddToSet(...args),
+  getSetSize: (...args) => mockGetSetSize(...args),
+  getStorageMode: () => 'memory',
+}));
+
+// The TMDB cache feeds these Prometheus counters; the overview reads its hit rate from them.
+jest.mock('../src/routes/metrics', () => ({
+  cacheHitRate: { get: async () => ({ values: [{ value: mockPromHits }] }) },
+  cacheMissRate: { get: async () => ({ values: [{ value: mockPromMisses }] }) },
 }));
 
 jest.mock('../src/config/redis', () => ({
@@ -39,19 +52,16 @@ const metrics = require('../src/services/analytics/metrics');
 describe('analytics metrics service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPromHits = 0;
+    mockPromMisses = 0;
   });
 
   test('trackRequest increments counters and tracks active user', async () => {
-    const redis = { sAdd: jest.fn().mockResolvedValue(1), expire: jest.fn().mockResolvedValue(1) };
-    mockIsRedisReady.mockReturnValue(true);
-    mockGetRedisClient.mockReturnValue(redis);
-
     await metrics.trackRequest('/api/search', 'GET', 200, 120, 'u1');
 
     expect(mockIncrementCounter).toHaveBeenCalled();
     expect(mockIncrementHashField).toHaveBeenCalled();
-    expect(redis.sAdd).toHaveBeenCalled();
-    expect(redis.expire).toHaveBeenCalled();
+    expect(mockAddToSet).toHaveBeenCalledWith(expect.stringMatching(/^metrics:active_users:\d{4}-\d{2}-\d{2}$/), 'u1');
   });
 
   test('trackError records endpoint error and logs warning', async () => {
@@ -68,7 +78,8 @@ describe('analytics metrics service', () => {
     await metrics.trackCacheHit();
     await metrics.trackCacheMiss();
 
-    expect(mockAddToSortedSet).toHaveBeenCalled();
+    expect(mockIncrementSortedSet).toHaveBeenCalledWith('metrics:popular_movies', JSON.stringify({ id: 'm1', title: 'Movie One' }), 1);
+    expect(mockIncrementSortedSet).toHaveBeenCalledWith('metrics:popular_tv', JSON.stringify({ id: 't1', title: 'TV One' }), 1);
     expect(mockIncrementCounter).toHaveBeenCalled();
   });
 
@@ -103,6 +114,18 @@ describe('analytics metrics service', () => {
     expect(data.cache.hitRate).toBe('80.00');
   });
 
+  test('overview takes the cache hit rate from the Prometheus counters the TMDB cache updates', async () => {
+    mockPromHits = 40;
+    mockPromMisses = 10;
+    mockGetMetric.mockResolvedValue(null);
+    mockGetHash.mockResolvedValue({});
+
+    const data = await metrics.getOverviewMetrics();
+
+    expect(data.cache).toEqual({ hits: 40, misses: 10, hitRate: '80.00' });
+    expect(data.storage).toBe('memory');
+  });
+
   test('popular search/movie/tv formatters parse values and fallback safely', async () => {
     mockGetTopFromSortedSet
       .mockResolvedValueOnce([{ value: 'matrix', score: 10 }])
@@ -118,14 +141,10 @@ describe('analytics metrics service', () => {
     expect(tv[0]).toMatchObject({ data: 'not-json', views: 5 });
   });
 
-  test('getActiveUsersCount handles redis unavailable and error', async () => {
-    mockIsRedisReady.mockReturnValue(false);
-    await expect(metrics.getActiveUsersCount()).resolves.toBe(0);
-
-    mockIsRedisReady.mockReturnValue(true);
-    mockGetRedisClient.mockReturnValue({ sCard: jest.fn().mockRejectedValue(new Error('down')) });
-    await expect(metrics.getActiveUsersCount()).resolves.toBe(0);
-    expect(mockLoggerError).toHaveBeenCalled();
+  test('getActiveUsersCount reads today\'s set size', async () => {
+    mockGetSetSize.mockResolvedValue(7);
+    await expect(metrics.getActiveUsersCount()).resolves.toBe(7);
+    expect(mockGetSetSize).toHaveBeenCalledWith(expect.stringMatching(/^metrics:active_users:\d{4}-\d{2}-\d{2}$/));
   });
 
   test('getPerformanceMetrics computes averages and error rates', async () => {

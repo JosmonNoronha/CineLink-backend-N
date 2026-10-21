@@ -1,12 +1,14 @@
 const {
   incrementCounter,
   incrementHashField,
-  addToSortedSet,
   incrementSortedSet,
   trimSortedSet,
   getMetric,
   getHash,
   getTopFromSortedSet,
+  addToSet,
+  getSetSize,
+  getStorageMode,
 } = require('./storage');
 const { logger } = require('../../utils/logger');
 
@@ -74,19 +76,7 @@ async function trackError(endpoint, method, error) {
  */
 async function trackActiveUser(userId) {
   const today = new Date().toISOString().slice(0, 10);
-  const key = `${keys.activeUsers()}:${today}`;
-
-  // Use set to track unique users
-  const { getRedisClient, isRedisReady } = require('../../config/redis');
-  if (isRedisReady()) {
-    try {
-      const redis = getRedisClient();
-      await redis.sAdd(key, userId);
-      await redis.expire(key, 604800); // 7 days TTL
-    } catch (error) {
-      logger.error('Failed to track active user', { error: error.message });
-    }
-  }
+  await addToSet(`${keys.activeUsers()}:${today}`, userId);
 }
 
 const MAX_TRACKED_SEARCHES = 2000;
@@ -119,7 +109,8 @@ async function trackSearch(query, userId = null) {
  */
 async function trackMovieView(movieId, title, userId = null) {
   const movieData = JSON.stringify({ id: movieId, title });
-  await addToSortedSet(keys.popularMovies(), Date.now(), movieData);
+  await incrementSortedSet(keys.popularMovies(), movieData, 1);
+  await trimSortedSet(keys.popularMovies(), MAX_TRACKED_SEARCHES);
 
   if (userId) {
     await trackActiveUser(userId);
@@ -131,7 +122,8 @@ async function trackMovieView(movieId, title, userId = null) {
  */
 async function trackTVView(tvId, title, userId = null) {
   const tvData = JSON.stringify({ id: tvId, title });
-  await addToSortedSet(keys.popularTVShows(), tvId, tvData);
+  await incrementSortedSet(keys.popularTVShows(), tvData, 1);
+  await trimSortedSet(keys.popularTVShows(), MAX_TRACKED_SEARCHES);
 
   if (userId) {
     await trackActiveUser(userId);
@@ -166,16 +158,28 @@ async function getOverviewMetrics() {
       getMetric(keys.cacheMisses()),
     ]);
 
+  // The TMDB cache feeds these Prometheus counters, so read the hit rate from there.
+  const promTotal = async (counter) => {
+    try {
+      return (await counter.get()).values.reduce((sum, v) => sum + v.value, 0);
+    } catch {
+      return 0;
+    }
+  };
+  const { cacheHitRate: promHits, cacheMissRate: promMisses } = require('../../routes/metrics');
+  const [promHitsNum, promMissesNum] = await Promise.all([promTotal(promHits), promTotal(promMisses)]);
+
   const totalRequestsNum = parseInt(totalRequests, 10) || 0;
   const totalErrorsNum = parseInt(totalErrors, 10) || 0;
-  const cacheHitsNum = parseInt(cacheHits, 10) || 0;
-  const cacheMissesNum = parseInt(cacheMisses, 10) || 0;
+  const cacheHitsNum = (parseInt(cacheHits, 10) || 0) + promHitsNum;
+  const cacheMissesNum = (parseInt(cacheMisses, 10) || 0) + promMissesNum;
 
   const errorRate = totalRequestsNum > 0 ? (totalErrorsNum / totalRequestsNum) * 100 : 0;
   const cacheHitRate =
     cacheHitsNum + cacheMissesNum > 0 ? (cacheHitsNum / (cacheHitsNum + cacheMissesNum)) * 100 : 0;
 
   return {
+    storage: getStorageMode(),
     totalRequests: totalRequestsNum,
     totalErrors: totalErrorsNum,
     errorRate: errorRate.toFixed(2),
@@ -233,20 +237,7 @@ async function getPopularTVShows(limit = 10) {
  */
 async function getActiveUsersCount() {
   const today = new Date().toISOString().slice(0, 10);
-  const key = `${keys.activeUsers()}:${today}`;
-
-  const { getRedisClient, isRedisReady } = require('../../config/redis');
-  if (!isRedisReady()) {
-    return 0;
-  }
-
-  try {
-    const redis = getRedisClient();
-    return await redis.sCard(key);
-  } catch (error) {
-    logger.error('Failed to get active users count', { error: error.message });
-    return 0;
-  }
+  return getSetSize(`${keys.activeUsers()}:${today}`);
 }
 
 /**
