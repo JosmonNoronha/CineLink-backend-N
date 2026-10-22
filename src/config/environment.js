@@ -71,6 +71,10 @@ const schema = Joi.object({
   FIREBASE_WEB_API_KEY: Joi.string().allow('').optional(),
   // Optional https link shown in the admin panel header (your Grafana dashboard).
   GRAFANA_URL: Joi.string().uri({ scheme: ['https'] }).allow('').optional(),
+  // Optional https link to your Sentry project, shown in the admin panel Links tab.
+  SENTRY_URL: Joi.string().uri({ scheme: ['https'] }).allow('').optional(),
+  // Optional JSON array of extra admin links: [{"label":"...","url":"https://...","group":"...","hint":"..."}]
+  ADMIN_EXTRA_LINKS: Joi.string().allow('').optional(),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -188,6 +192,8 @@ const env = {
   AUTO_HIDE_REPORT_THRESHOLD: value.AUTO_HIDE_REPORT_THRESHOLD,
   FIREBASE_WEB_API_KEY: value.FIREBASE_WEB_API_KEY,
   GRAFANA_URL: value.GRAFANA_URL,
+  SENTRY_URL: value.SENTRY_URL,
+  ADMIN_EXTRA_LINKS: value.ADMIN_EXTRA_LINKS,
 };
 
 module.exports = { env };

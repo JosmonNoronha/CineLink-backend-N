@@ -25,6 +25,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" data-tab="queue" role="tab">Queue <span id="queue-count" class="badge"></span></button>
         <button class="tab" data-tab="overview" role="tab">Overview</button>
+        <button class="tab" data-tab="links" role="tab">Links <span id="links-badge" class="badge warn"></span></button>
         <button class="tab" data-tab="audit" role="tab">Audit log</button>
       </nav>
       <span class="spacer"></span>
@@ -49,6 +50,11 @@
     <section id="view-overview" class="overview hidden">
       <div class="overview-head"><h2>Overview</h2><button id="overview-refresh" class="btn small">Refresh</button></div>
       <div id="overview-body"></div>
+    </section>
+
+    <section id="view-links" class="links hidden">
+      <div class="overview-head"><h2>Admin links</h2><button id="links-refresh" class="btn small">Refresh</button></div>
+      <div id="links-body"></div>
     </section>
 
     <section id="view-audit" class="audit hidden">

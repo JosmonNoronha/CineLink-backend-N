@@ -286,12 +286,45 @@
     }
   }
 
+  // ── links (admins) ──
+  function safeHref(u) {
+    if (typeof u !== 'string') return null;
+    if (/^https:\/\//i.test(u)) return u;
+    if (/^\/[^\s/]/.test(u)) return location.origin + u;
+    return null;
+  }
+
+  async function loadLinks() {
+    const body = clear($('links-body'));
+    try {
+      const { groups, notSetUp } = await call('/admin/links');
+      $('links-badge').textContent = notSetUp ? String(notSetUp) : '';
+      if (notSetUp) body.append(el('div', { class: 'notice', text: notSetUp + ' tool' + (notSetUp === 1 ? ' is' : 's are') + ' not set up yet. The setting that fixes each one is shown below.' }));
+      body.append(el('div', { class: 'link-groups' }, groups.map((g) => el('div', { class: 'card section' },
+        el('h3', { text: g.title }),
+        g.links.map((l) => {
+          const href = safeHref(l.url);
+          return el('div', { class: 'link-row' + (href ? '' : ' off') },
+            el('div', { class: 'text' },
+              el('div', { class: 'label', text: l.label }),
+              el('div', { class: 'hint', text: l.setup || l.hint })),
+            el('div', { class: 'link-actions' },
+              l.setup && el('span', { class: 'chip todo', text: 'Not set up' }),
+              href && el('a', { class: 'btn small', href, target: '_blank', rel: 'noopener noreferrer', text: 'Open ↗' })));
+        })))));
+    } catch (e) {
+      if (e.status === 403) body.append(el('div', { class: 'empty', text: 'The links list is for admins only.' }));
+      else { body.append(el('div', { class: 'empty', text: 'Could not load the links.' })); handleError(e); }
+    }
+  }
+
   function showTab(name) {
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.dataset.tab === name));
     $('view-queue').classList.toggle('hidden', name !== 'queue');
     $('view-audit').classList.toggle('hidden', name !== 'audit');
     $('view-overview').classList.toggle('hidden', name !== 'overview');
-    if (name === 'audit') loadAudit(); else if (name === 'overview') loadOverview(); else loadQueue();
+    $('view-links').classList.toggle('hidden', name !== 'links');
+    if (name === 'audit') loadAudit(); else if (name === 'overview') loadOverview(); else if (name === 'links') loadLinks(); else loadQueue();
   }
 
   function handleError(e) {
@@ -325,6 +358,7 @@
     $('signout').addEventListener('click', signOut);
     $('refresh').addEventListener('click', loadQueue);
     $('overview-refresh').addEventListener('click', loadOverview);
+    $('links-refresh').addEventListener('click', loadLinks);
     if (typeof state.cfg.grafanaUrl === 'string' && /^https:\/\//.test(state.cfg.grafanaUrl)) {
       const g = $('grafana'); g.href = state.cfg.grafanaUrl; g.classList.remove('hidden');
     }
