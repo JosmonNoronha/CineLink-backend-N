@@ -38,4 +38,12 @@ const suggestLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter, batchDetailsLimiter, suggestLimiter, };
+   const accountDeletionLimiter = rateLimit({
+     windowMs: 60 * 60 * 1000,
+     limit: 5,
+     standardHeaders: true,
+     legacyHeaders: false,
+     keyGenerator: (req) => req?.user?.uid || req.ip,
+   });
+
+module.exports = { globalLimiter, searchLimiter, gamificationActionLimiter, batchDetailsLimiter, suggestLimiter, accountDeletionLimiter, };

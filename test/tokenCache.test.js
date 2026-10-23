@@ -254,3 +254,27 @@ describe('TokenCacheService', () => {
     });
   });
 });
+
+describe('deleted-user denylist', () => {
+  const TokenCache = require('../src/services/tokenCache');
+  test('works in memory without Redis', async () => {
+    const c = new TokenCache(() => null);
+    expect(await c.isUserDeleted('u1')).toBe(false);
+    await c.markUserDeleted('u1');
+    expect(await c.isUserDeleted('u1')).toBe(true);
+    expect(await c.isUserDeleted('u2')).toBe(false);
+  });
+  test('is shared through Redis, so another server instance sees it', async () => {
+    const kv = new Map();
+    const redis = { isReady: true, set: async (k, v) => { kv.set(k, v); }, exists: async (k) => (kv.has(k) ? 1 : 0) };
+    await new TokenCache(() => redis).markUserDeleted('u1');
+    expect(await new TokenCache(() => redis).isUserDeleted('u1')).toBe(true);
+  });
+  test('a Redis error does not throw', async () => {
+    const redis = { isReady: true, exists: async () => { throw new Error('x'); }, set: async () => { throw new Error('x'); } };
+    const c = new TokenCache(() => redis);
+    await expect(c.markUserDeleted('u1')).resolves.toBeUndefined();
+    expect(await c.isUserDeleted('u1')).toBe(true); // remembered in memory
+    expect(await c.isUserDeleted('u7')).toBe(false);
+  });
+});

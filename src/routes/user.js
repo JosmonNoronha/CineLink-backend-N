@@ -1,11 +1,13 @@
 const { Router } = require('express');
 const Joi = require('joi');
 const { ok } = require('../utils/helpers');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, markUserDeleted } = require('../middleware/auth');
 const { validate } = require('../middleware/validator');
 const { schemas } = require('../utils/validators');
 const { AppError } = require('../utils/errors');
-const { gamificationActionLimiter } = require('../middleware/rateLimiter');
+const { gamificationActionLimiter, accountDeletionLimiter } = require('../middleware/rateLimiter');
+const { requireRecentLogin } = require('../middleware/recentLogin');
+const accountDeletion = require('../services/user/accountDeletion');
 const { logger } = require('../utils/logger');
 const profileService = require('../services/user/profile');
 const favoritesService = require('../services/user/favorites');
@@ -41,6 +43,19 @@ router.use(async (req, _res, next) => {
   });
   next();
 });
+
+// Permanent. Needs a sign-in from the last 5 minutes and an explicit confirmation.
+router.delete(
+  '/account',
+  accountDeletionLimiter,
+  validate({ body: Joi.object({ confirm: Joi.string().valid('DELETE').required() }) }),
+  requireRecentLogin({ maxAgeSeconds: 300 }),
+  async (req, res) => {
+    const summary = await accountDeletion.deleteAccount(req.user.uid);
+    await markUserDeleted(req.user.uid); // reject this person's still-valid tokens from now on
+    return ok(res, { deleted: true, ...summary });
+  }
+);
 
 router.get('/profile', async (req, res) => {
   const data = await profileService.getProfile(req.user.uid);

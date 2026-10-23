@@ -20,6 +20,14 @@ jest.mock('../src/utils/logger', () => ({
 // Mock optionalAuth to avoid Firebase calls during tests. If the
 // Authorization header equals 'Bearer valid-token' we'll populate `req.user`.
 jest.mock('../src/middleware/auth', () => ({
+  authMiddleware: (req, _res, next) => {
+    const { AppError } = require('../src/utils/errors');
+    if (req.headers.authorization !== 'Bearer valid-token') {
+      return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
+    }
+    req.user = { uid: req.headers['x-test-user'] || 'test-user-1', email: 'test@example.com' };
+    return next();
+  },
   optionalAuth: (req, _res, next) => {
     const header = req.headers.authorization || '';
     if (header === 'Bearer valid-token') {
@@ -113,6 +121,8 @@ describe('recommendations routes', () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/recommendations/ml')
+      .set('Authorization', 'Bearer valid-token')
+      .set('x-test-user', 'ml-ok')
       .send({ titles: ['Matrix'], top_n: 5 });
 
     expect(res.status).toBe(200);
@@ -126,11 +136,63 @@ describe('recommendations routes', () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/recommendations/ml')
+      .set('Authorization', 'Bearer valid-token')
+      .set('x-test-user', 'ml-fail')
       .send({ titles: ['Matrix'] });
 
     expect(res.status).toBe(503);
     expect(res.body.success).toBe(false);
     expect(mockLoggerError).toHaveBeenCalled();
+    expect(JSON.stringify(res.body)).not.toContain('timeout'); // upstream error text is not leaked
+  });
+
+  test('POST /ml requires a signed-in user and never calls the external service without one', async () => {
+    const res = await request(buildApp()).post('/api/recommendations/ml').send({ titles: ['Matrix'] });
+    expect(res.status).toBe(401);
+    expect(mockAxiosPost).not.toHaveBeenCalled();
+  });
+
+  test('POST /ml is limited per user', async () => {
+    mockAxiosPost.mockResolvedValue({ data: { recommendations: [] } });
+    const app = buildApp();
+    const call = () =>
+      request(app)
+        .post('/api/recommendations/ml')
+        .set('Authorization', 'Bearer valid-token')
+        .set('x-test-user', 'ml-spammer')
+        .send({ titles: ['Matrix'] });
+    let last;
+    for (let i = 0; i < 11; i += 1) last = await call();
+    expect(last.status).toBe(429);
+    const other = await request(app)
+      .post('/api/recommendations/ml')
+      .set('Authorization', 'Bearer valid-token')
+      .set('x-test-user', 'someone-else')
+      .send({ titles: ['Matrix'] });
+    expect(other.status).toBe(200);
+  });
+
+  test('POST /ml allows only 3 slow calls at once, then says busy', async () => {
+    let release;
+    const gate = new Promise((r) => { release = r; });
+    mockAxiosPost.mockImplementation(() => gate.then(() => ({ data: { recommendations: [] } })));
+    const app = buildApp();
+    const fire = (uid) =>
+      request(app)
+        .post('/api/recommendations/ml')
+        .set('Authorization', 'Bearer valid-token')
+        .set('x-test-user', uid)
+        .send({ titles: ['Matrix'] });
+    const pending = ['a', 'b', 'c'].map((u) => fire(`busy-${u}`).then((r) => r));
+    await new Promise((r) => setTimeout(r, 150)); // let the three start
+    const fourth = await fire('busy-d');
+    expect(fourth.status).toBe(503);
+    expect(fourth.body.error.code).toBe('EXTERNAL_ML_API_BUSY');
+    release();
+    const done = await Promise.all(pending);
+    expect(done.every((r) => r.status === 200)).toBe(true);
+    const after = await fire('busy-e'); // slots were freed
+    expect(after.status).toBe(200);
   });
 
   test('POST / with personalize=true without auth returns 401', async () => {

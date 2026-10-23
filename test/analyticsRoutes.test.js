@@ -28,6 +28,7 @@ jest.mock('../src/middleware/auth', () => {
     optionalAuth: (_req, _res, next) => next(),
     authMiddleware: (req, _res, next) => {
       const role = req.headers['x-test-role'];
+      req.headers.authorization = 'Bearer test-token'; // rbac re-checks privileged tokens
       if (!role) return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
       req.user = { uid: 'u1', permissions: role === 'admin' ? ['user:read', 'user:write', 'admin:all'] : ['user:read', 'user:write'] };
       return next();
@@ -35,6 +36,7 @@ jest.mock('../src/middleware/auth', () => {
   };
 });
 
+jest.mock('../src/config/firebase', () => ({ getAuth: () => ({ verifyIdToken: async () => ({}) }) }));
 jest.mock('../src/utils/logger', () => ({
   logger: {
     error: (...args) => mockLoggerError(...args),

@@ -13,6 +13,7 @@ const mockTokenCache = {
   isRevoked: jest.fn(),
   cacheToken: jest.fn(),
   revokeToken: jest.fn(),
+  isUserDeleted: jest.fn().mockResolvedValue(false),
 };
 
 jest.mock('../src/config/firebase', () => ({
@@ -33,6 +34,7 @@ describe('authMiddleware', () => {
     mockTokenCache.getToken.mockReset();
     mockTokenCache.isRevoked.mockReset();
     mockTokenCache.cacheToken.mockReset();
+    mockTokenCache.isUserDeleted.mockReset().mockResolvedValue(false);
     mockVerifyIdToken.mockReset();
   });
 
@@ -142,6 +144,7 @@ describe('optionalAuth', () => {
     mockTokenCache.getToken.mockReset();
     mockTokenCache.isRevoked.mockReset();
     mockTokenCache.cacheToken.mockReset();
+    mockTokenCache.isUserDeleted.mockReset().mockResolvedValue(false);
     mockVerifyIdToken.mockReset();
   });
 
@@ -176,5 +179,39 @@ describe('optionalAuth', () => {
     });
     expect(req.user.roles).toEqual(['admin']);
     expect(next).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('deleted accounts', () => {
+  beforeEach(() => {
+    mockTokenCache.cacheToken.mockReset();
+    mockTokenCache.getToken.mockReset();
+    mockTokenCache.isRevoked.mockReset().mockResolvedValue(false);
+    mockTokenCache.isUserDeleted.mockReset().mockResolvedValue(true);
+    mockVerifyIdToken.mockReset().mockResolvedValue({ uid: 'gone', exp: 9999999999 });
+  });
+
+  it('authMiddleware refuses a cached token of a deleted user', async () => {
+    mockTokenCache.getToken.mockResolvedValue({ uid: 'gone' });
+    const next = createNext();
+    await authMiddleware(createMockReq('Bearer t'), {}, next);
+    expect(next.mock.calls[0][0]).toMatchObject({ statusCode: 401, code: 'ACCOUNT_DELETED' });
+  });
+
+  it('authMiddleware refuses a freshly verified token of a deleted user and does not cache it', async () => {
+    mockTokenCache.getToken.mockResolvedValue(null);
+    const next = createNext();
+    await authMiddleware(createMockReq('Bearer t'), {}, next);
+    expect(next.mock.calls[0][0]).toMatchObject({ code: 'ACCOUNT_DELETED' });
+    expect(mockTokenCache.cacheToken).not.toHaveBeenCalled();
+  });
+
+  it('optionalAuth treats a deleted user as signed out', async () => {
+    mockTokenCache.getToken.mockResolvedValue(null);
+    const req = createMockReq('Bearer t');
+    const next = createNext();
+    await optionalAuth(req, {}, next);
+    expect(req.user).toBeUndefined();
+    expect(next).toHaveBeenCalledWith();
   });
 });

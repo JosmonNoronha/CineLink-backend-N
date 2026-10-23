@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // App domain data is backend-only. Client apps must use API routes.
+    match /users/{userId} {
+      allow read, write: if false;
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    // Deny by default for every other collection unless explicitly opened later.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

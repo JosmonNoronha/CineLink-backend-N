@@ -2,6 +2,7 @@ const { Router } = require('express');
 const Joi = require('joi');
 const { ok } = require('../utils/helpers');
 const { validate } = require('../middleware/validator');
+const { authMiddleware } = require('../middleware/auth');
 const { batchDetailsLimiter } = require('../middleware/rateLimiter');
 const movieService = require('../services/tmdb/movies');
 const reviewService = require('../services/tmdb/reviews');
@@ -99,14 +100,16 @@ router.get(
   }
 );
 
+// Each id costs several TMDB calls, so this needs a signed-in user (not just an IP address).
 router.post(
   '/batch-details',
+  authMiddleware,
   batchDetailsLimiter,
   validate({
     body: Joi.object({ imdbIDs: Joi.array().items(Joi.string().trim().min(1)).min(1).max(50).required() }),
   }),
   async (req, res) => {
-    const imdbIDs = req.body.imdbIDs;
+    const imdbIDs = [...new Set(req.body.imdbIDs)]; // the same id twice would cost twice
     const results = [];
     for (const id of imdbIDs) {
       try {

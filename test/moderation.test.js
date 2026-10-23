@@ -9,7 +9,7 @@ const mockFake = createFakeFirestore();
 jest.mock('firebase-admin', () => ({
   firestore: { FieldValue: { serverTimestamp: jest.fn(() => 'TS'), increment: jest.fn((n) => ({ inc: n })) } },
 }));
-jest.mock('../src/config/firebase', () => ({ getFirestore: () => mockFake }));
+jest.mock('../src/config/firebase', () => ({ getFirestore: () => mockFake, getAuth: () => ({ verifyIdToken: async () => ({}) }) }));
 jest.mock('../src/config/environment', () => ({ env: { AUTO_HIDE_REPORT_THRESHOLD: 3 } }));
 jest.mock('../src/utils/logger', () => ({
   logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() },
@@ -20,6 +20,7 @@ jest.mock('../src/middleware/auth', () => {
     optionalAuth: (_req, _res, next) => next(),
     authMiddleware: (req, _res, next) => {
       const role = req.headers['x-test-role'];
+      req.headers.authorization = 'Bearer test-token'; // rbac re-checks privileged tokens
       if (!role) return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
       const perms = {
         user: ['user:read', 'user:write'],

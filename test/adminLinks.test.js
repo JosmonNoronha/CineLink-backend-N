@@ -4,12 +4,14 @@ const express = require('express');
 
 const mockEnv = {};
 jest.mock('../src/config/environment', () => ({ env: mockEnv }));
+jest.mock('../src/config/firebase', () => ({ getAuth: () => ({ verifyIdToken: async () => ({}) }) }));
 jest.mock('../src/utils/logger', () => ({ logger: { error: jest.fn(), warn: jest.fn(), info: jest.fn(), debug: jest.fn() } }));
 jest.mock('../src/middleware/auth', () => {
   const { AppError } = require('../src/utils/errors');
   return {
     authMiddleware: (req, _res, next) => {
       const role = req.headers['x-test-role'];
+      req.headers.authorization = 'Bearer test-token'; // rbac re-checks privileged tokens
       if (!role) return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
       const perms = { user: ['user:read'], moderator: ['user:read', 'content:moderate'], admin: ['content:moderate', 'admin:all'] }[role];
       req.user = { uid: `${role}-1`, permissions: perms };

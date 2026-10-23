@@ -16,6 +16,18 @@ function getTokenCacheService() {
   return tokenCacheService;
 }
 
+function accountDeletedError() {
+  return new AppError('Account deleted', 401, 'ACCOUNT_DELETED', undefined, {
+    userMessage: 'This account has been deleted.',
+    retryable: false,
+  });
+}
+
+/** Called after an account is deleted: its existing tokens are refused from now on. */
+async function markUserDeleted(uid) {
+  await getTokenCacheService().markUserDeleted(uid);
+}
+
 function deriveAuthorizationContext(claims = {}) {
   const roles = [];
   if (claims.admin === true) roles.push('admin');
@@ -73,6 +85,7 @@ async function authMiddleware(req, _res, next) {
     }
 
     if (cached) {
+      if (await cache.isUserDeleted(cached.uid)) throw accountDeletedError();
       const authz = deriveAuthorizationContext(cached);
       req.user = {
         uid: cached.uid,
@@ -87,6 +100,7 @@ async function authMiddleware(req, _res, next) {
     }
 
     const decoded = await getAuth().verifyIdToken(token);
+    if (await cache.isUserDeleted(decoded.uid)) throw accountDeletedError();
     await cache.cacheToken(token, decoded);
     const authz = deriveAuthorizationContext(decoded);
     req.user = {
@@ -161,7 +175,7 @@ async function optionalAuth(req, _res, next) {
 
     if (cached) {
       const isRevoked = await cache.isRevoked(token);
-      if (!isRevoked) {
+      if (!isRevoked && !(await cache.isUserDeleted(cached.uid))) {
         const authz = deriveAuthorizationContext(cached);
         req.user = {
           uid: cached.uid,
@@ -178,6 +192,7 @@ async function optionalAuth(req, _res, next) {
 
     // Verify token
     const decoded = await getAuth().verifyIdToken(token);
+    if (await cache.isUserDeleted(decoded.uid)) return next();
     await cache.cacheToken(token, decoded);
     const authz = deriveAuthorizationContext(decoded);
     req.user = {
@@ -197,4 +212,4 @@ async function optionalAuth(req, _res, next) {
   }
 }
 
-module.exports = { authMiddleware, optionalAuth };
+module.exports = { authMiddleware, optionalAuth, markUserDeleted };

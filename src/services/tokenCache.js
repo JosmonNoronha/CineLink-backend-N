@@ -18,6 +18,42 @@ class TokenCacheService {
     this.TOKEN_CACHE_PREFIX = 'auth:token:';
     this.TOKEN_REVOCATION_PREFIX = 'auth:revoked:';
     this.FALLBACK_TTL = 5 * 60 * 1000; // 5 minutes for in-memory fallback
+    this.DELETED_USER_PREFIX = 'auth:deleted:';
+    this.DELETED_TTL_SECONDS = 2 * 60 * 60; // longer than a Firebase ID token lives (1 hour)
+    this.deletedUsers = new Map(); // uid -> expiry timestamp (ms)
+  }
+
+  /**
+   * Remember that an account was deleted, so ID tokens issued before the deletion stop working
+   * straight away instead of lasting until they expire.
+   */
+  async markUserDeleted(uid) {
+    if (!uid) return;
+    this.deletedUsers.set(uid, Date.now() + this.DELETED_TTL_SECONDS * 1000);
+    try {
+      if (this.redis && this.redis.isReady) {
+        await this.redis.set(`${this.DELETED_USER_PREFIX}${uid}`, '1', { EX: this.DELETED_TTL_SECONDS });
+      }
+    } catch (error) {
+      logger.warn(`Deleted-user marker Redis write failed: ${error.message}`);
+    }
+  }
+
+  async isUserDeleted(uid) {
+    if (!uid) return false;
+    const until = this.deletedUsers.get(uid);
+    if (until) {
+      if (until > Date.now()) return true;
+      this.deletedUsers.delete(uid);
+    }
+    try {
+      if (this.redis && this.redis.isReady) {
+        return (await this.redis.exists(`${this.DELETED_USER_PREFIX}${uid}`)) > 0;
+      }
+    } catch (error) {
+      logger.warn(`Deleted-user marker Redis read failed: ${error.message}`);
+    }
+    return false;
   }
 
   get redis() {

@@ -9,9 +9,22 @@ const { tmdbConfig } = require('../config/tmdb');
 const { logger } = require('../utils/logger');
 const { AppError } = require('../utils/errors');
 const axios = require('axios');
-const { optionalAuth } = require('../middleware/auth');
+const rateLimit = require('express-rate-limit');
+const { optionalAuth, authMiddleware } = require('../middleware/auth');
 
 const router = Router();
+
+// The ML endpoint forwards to a slow third-party service (up to 120 s per call), so it is
+// limited per user and the number of calls in flight at once is capped for the whole server.
+const mlLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req?.user?.uid || req.ip,
+});
+const ML_MAX_IN_FLIGHT = 3;
+let mlInFlight = 0;
 
 // Recommendations endpoint: public for content-based requests, but
 // when client asks for `personalize: true` the request requires authentication.
@@ -106,15 +119,25 @@ router.post(
 // Uses movie-reco-api.onrender.com for content-based recommendations
 router.post(
   '/ml',
+  authMiddleware,
+  mlLimiter,
   validate({
     body: Joi.object({
-      titles: Joi.array().items(Joi.string().trim().min(1)).min(1).max(5).required(),
+      titles: Joi.array().items(Joi.string().trim().min(1).max(200)).min(1).max(5).required(),
       top_n: Joi.number().integer().min(1).max(20).default(10),
     }),
   }),
   async (req, res, next) => {
     const { titles, top_n = 10 } = req.body;
 
+    if (mlInFlight >= ML_MAX_IN_FLIGHT) {
+      throw new AppError('Recommendations service is busy', 503, 'EXTERNAL_ML_API_BUSY', undefined, {
+        userMessage: 'Recommendations are busy right now. Please try again in a minute.',
+        retryable: true,
+      });
+    }
+
+    mlInFlight += 1;
     try {
       const response = await axios.post(
         'https://movie-reco-api.onrender.com/recommend',
@@ -143,15 +166,14 @@ router.post(
         'External ML API temporarily unavailable',
         503,
         'EXTERNAL_ML_API_UNAVAILABLE',
-        {
-          serviceError: error.message,
-          note: 'Use the primary /recommendations endpoint for TMDB-based recommendations',
-        },
+        { note: 'Use the primary /recommendations endpoint for TMDB-based recommendations' },
         {
           userMessage: 'Recommendations service is temporarily unavailable. Please try again later.',
           retryable: true,
         }
       );
+    } finally {
+      mlInFlight -= 1;
     }
   }
 );

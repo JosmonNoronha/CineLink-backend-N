@@ -26,6 +26,16 @@ const mockCompat = {
 jest.mock('../src/services/tmdb/movies', () => mockMovieService);
 jest.mock('../src/services/tmdb/reviews', () => mockReviewService);
 jest.mock('../src/services/tmdb/compat', () => mockCompat);
+jest.mock('../src/middleware/auth', () => {
+  const { AppError } = require('../src/utils/errors');
+  return {
+    authMiddleware: (req, _res, next) => {
+      if (!req.headers['x-test-user']) return next(new AppError('Missing Authorization bearer token', 401, 'UNAUTHORIZED'));
+      req.user = { uid: req.headers['x-test-user'] };
+      return next();
+    },
+  };
+});
 
 const router = require('../src/routes/movies');
 const { errorHandler } = require('../src/middleware/errorHandler');
@@ -109,6 +119,7 @@ describe('movies routes', () => {
     const app = buildApp();
     const res = await request(app)
       .post('/api/movies/batch-details')
+      .set('x-test-user', 'u1')
       .send({ imdbIDs: ['tt0133093', 'bad'] });
 
     expect(res.status).toBe(200);
@@ -126,11 +137,30 @@ describe('movies routes', () => {
     for (let index = 0; index < 16; index += 1) {
       lastRes = await request(app)
         .post('/api/movies/batch-details')
+        .set('x-test-user', 'u-limit')
         .send({ imdbIDs: ['tt0133093'] });
       if (lastRes.status === 429) break;
     }
 
     expect(lastRes.status).toBe(429);
+  });
+
+  test('batch-details requires a signed-in user and does no TMDB work without one', async () => {
+    const res = await request(buildApp()).post('/api/movies/batch-details').send({ imdbIDs: ['tt0133093'] });
+    expect(res.status).toBe(401);
+    expect(mockCompat.resolveToTmdb).not.toHaveBeenCalled();
+  });
+
+  test('batch-details looks up a repeated id only once', async () => {
+    mockCompat.resolveToTmdb.mockResolvedValue({ media_type: 'movie', tmdb_id: 603, imdb_id: 'tt0133093' });
+    mockCompat.movieDetailsOmdbLike.mockResolvedValue({ Title: 'The Matrix' });
+    const res = await request(buildApp())
+      .post('/api/movies/batch-details')
+      .set('x-test-user', 'u-dupe')
+      .send({ imdbIDs: ['tt0133093', 'tt0133093', 'tt0133093'] });
+    expect(res.status).toBe(200);
+    expect(res.body.data.results).toHaveLength(1);
+    expect(mockCompat.resolveToTmdb).toHaveBeenCalledTimes(1);
   });
 
   test.each([
