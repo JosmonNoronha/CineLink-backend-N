@@ -93,6 +93,13 @@ const membershipQuerySchema = Joi.object({
   key: Joi.string().pattern(/^(movie|tv):\d+$/).required(),
 });
 
+const blockSchema = Joi.object({
+  userId: Joi.string().trim().min(1).max(128).required(),
+  name: Joi.string().trim().max(60).allow('').optional(),
+});
+
+const blockedParamSchema = Joi.object({ userId: Joi.string().trim().min(1).max(128).required() });
+
 const reportSchema = Joi.object({
   reason: Joi.string().valid(...svc.REPORT_REASONS).required(),
   note: Joi.string().trim().max(300).allow('').optional(),
@@ -141,6 +148,21 @@ router.get('/membership', authMiddleware, validate({ query: membershipQuerySchem
   ok(res, await svc.getMembership(req.user.uid, req.query.key)),
 );
 
+// Block / unblock the owner of a list (Apple guideline 1.2). Static paths, so before /:id.
+router.get('/blocked-users', authMiddleware, async (req, res) => ok(res, await svc.listBlocked(req.user.uid)));
+
+router.post('/blocked-users', authMiddleware, socialLimiter, validate({ body: blockSchema }), async (req, res) =>
+  ok(res, await svc.blockUser(req.user.uid, req.body.userId, req.body.name)),
+);
+
+router.delete(
+  '/blocked-users/:userId',
+  authMiddleware,
+  socialLimiter,
+  validate({ params: blockedParamSchema }),
+  async (req, res) => ok(res, await svc.unblockUser(req.user.uid, req.params.userId)),
+);
+
 router.get('/:id', optionalAuth, validate({ params: listIdSchema }), async (req, res) => {
   return ok(res, await svc.getPublicWatchlist(req.params.id, req.user?.uid || null));
 });
@@ -165,6 +187,7 @@ router.get(
     ok(res, await svc.getPublicWatchlistItems(req.params.id, {
       limit: req.query.limit,
       cursor: req.query.cursor || null,
+      requestingUid: req.user?.uid || null,
     })),
 );
 

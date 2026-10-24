@@ -7,6 +7,7 @@ const { AppError } = require('../../utils/errors');
 const { cacheGet, cacheSet } = require('../tmdb/cache');
 const tmdbMovies = require('../tmdb/movies');
 const tmdbTv = require('../tmdb/tv');
+const blocks = require('./blocks');
 
 // ─── Collection helpers ───────────────────────────────────────────────────────
 
@@ -187,8 +188,16 @@ async function createPublicWatchlist(uid, { name, description = '', tags = [], o
 
 // ─── Read ─────────────────────────────────────────────────────────────────────
 
+// A list by someone the viewer has blocked behaves as if it does not exist.
+async function assertNotBlocked(snap, requestingUid) {
+  if (!requestingUid) return;
+  const blocked = await blocks.getBlockedIds(requestingUid);
+  if (blocked.has(snap.data().ownerId)) throw new AppError('Watchlist not found', 404, 'NOT_FOUND');
+}
+
 async function getPublicWatchlist(id, requestingUid = null) {
   const snap = await requirePublicList(id);
+  await assertNotBlocked(snap, requestingUid);
   const data = serializeList(id, snap.data());
 
   if (requestingUid) {
@@ -203,8 +212,8 @@ async function getPublicWatchlist(id, requestingUid = null) {
   return data;
 }
 
-async function getPublicWatchlistItems(id, { limit = PAGE_SIZE_DEFAULT, cursor = null } = {}) {
-  await requirePublicList(id);
+async function getPublicWatchlistItems(id, { limit = PAGE_SIZE_DEFAULT, cursor = null, requestingUid = null } = {}) {
+  await assertNotBlocked(await requirePublicList(id), requestingUid);
   const safeLimit = clampLimit(limit);
 
   let query = itemsCol(id)
@@ -277,7 +286,12 @@ async function discoverPublicWatchlists({
     }
   }
 
-  const lists = page.lists.map((l) => ({ ...l }));
+  let lists = page.lists.map((l) => ({ ...l }));
+
+  if (requestingUid) {
+    const blocked = await blocks.getBlockedIds(requestingUid);
+    if (blocked.size) lists = lists.filter((l) => !blocked.has(l.ownerId));
+  }
 
   if (requestingUid && lists.length) {
     // One batched RPC per kind instead of one read per list.
@@ -336,13 +350,15 @@ async function getFollowedWatchlists(uid, { limit = PAGE_SIZE_DEFAULT, cursor = 
   const hasMore = refDocs.length > safeLimit;
   const refs = refDocs.slice(0, safeLimit);
 
-  const lists = refs.length
+  const allLists = refs.length
     ? await listFromRefs(refs, (l, s) => ({
         ...l,
         viewerIsFollowing: true,
         viewerIsOwner: s.data().ownerId === uid,
       }))
     : [];
+  const blocked = await blocks.getBlockedIds(uid);
+  const lists = blocked.size ? allLists.filter((l) => !blocked.has(l.ownerId)) : allLists;
   const nextCursor = hasMore ? encodeCursor(tsCursor(refs[safeLimit - 1].data().followedAt)) : null;
   return { lists, hasMore, nextCursor };
 }
@@ -589,6 +605,9 @@ module.exports = {
   reportPublicWatchlist,
   takedownPublicWatchlist,
   getMembership,
+  blockUser: blocks.blockUser,
+  unblockUser: blocks.unblockUser,
+  listBlocked: blocks.listBlocked,
   REPORT_REASONS,
   _internal: {
     sanitizeOwnerName,

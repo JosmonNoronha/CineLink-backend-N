@@ -118,9 +118,10 @@ async function main() {
   });
 
   process.on('unhandledRejection', (reason) => {
+    // Log and keep serving. A forgotten .catch() on one request (for example a failed TMDB call)
+    // should not take the whole server down for everyone. Real crashes still arrive as an
+    // uncaughtException above, which does shut down.
     logger.error('Unhandled rejection:', reason && reason.stack ? reason.stack : String(reason));
-    // try to gracefully shutdown
-    gracefulShutdown(server, 'unhandledRejection', reason).catch(() => process.exit(1));
   });
 }
 

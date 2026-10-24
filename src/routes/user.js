@@ -34,14 +34,31 @@ function logLegacyWatchlistRoute(req, _res, next) {
   return next();
 }
 
+// Make sure the profile document exists. Once confirmed it is remembered for 10 minutes per user,
+// so a busy session does not pay a Firestore read on every request.
+const PROFILE_CHECK_TTL_MS = 10 * 60 * 1000;
+const PROFILE_CHECK_MAX = 5000;
+const profileChecked = new Map(); // uid -> expires at (ms)
+
 router.use(authMiddleware);
 router.use(async (req, _res, next) => {
-  await profileService.ensureProfile(req.user.uid, {
+  const { uid } = req.user;
+  const until = profileChecked.get(uid);
+  if (until && until > Date.now()) return next();
+
+  await profileService.ensureProfile(uid, {
     email: req.user.email,
     name: req.user.name,
     picture: req.user.picture,
   });
-  next();
+
+  if (profileChecked.size >= PROFILE_CHECK_MAX) {
+    const now = Date.now();
+    for (const [k, exp] of profileChecked) if (exp <= now) profileChecked.delete(k);
+    if (profileChecked.size >= PROFILE_CHECK_MAX) profileChecked.clear();
+  }
+  profileChecked.set(uid, Date.now() + PROFILE_CHECK_TTL_MS);
+  return next();
 });
 
 // Permanent. Needs a sign-in from the last 5 minutes and an explicit confirmation.
@@ -52,6 +69,7 @@ router.delete(
   requireRecentLogin({ maxAgeSeconds: 300 }),
   async (req, res) => {
     const summary = await accountDeletion.deleteAccount(req.user.uid);
+    profileChecked.delete(req.user.uid);
     await markUserDeleted(req.user.uid); // reject this person's still-valid tokens from now on
     return ok(res, { deleted: true, ...summary });
   }
@@ -67,7 +85,14 @@ router.put(
   validate({
     body: Joi.object({
       username: Joi.string().trim().min(1).max(64).optional(),
-      preferences: Joi.object().optional(),
+      // Free-form, but bounded: at most 50 keys and 8 KB, so one user cannot fill a document.
+      preferences: Joi.object()
+        .max(50)
+        .custom((value, helpers) =>
+          Buffer.byteLength(JSON.stringify(value), 'utf8') > 8192 ? helpers.error('any.invalid') : value
+        )
+        .messages({ 'any.invalid': 'preferences is too large' })
+        .optional(),
     }),
   }),
   async (req, res) => {

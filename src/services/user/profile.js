@@ -40,7 +40,7 @@ async function upsertProfile(uid, patch) {
       ...patch,
       uid,
       updatedAt: now,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      // createdAt: admin.firestore.FieldValue.serverTimestamp(),
     },
     { merge: true }
   );

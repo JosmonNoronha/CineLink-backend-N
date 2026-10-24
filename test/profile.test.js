@@ -89,11 +89,11 @@ describe('profile service', () => {
       expect.objectContaining({
         uid: 'uid-3',
         displayName: 'New Name',
-        createdAt: 'SERVER_TIMESTAMP',
         updatedAt: 'SERVER_TIMESTAMP',
       }),
       { merge: true }
     );
+    expect(mockSet.mock.calls[0][0]).not.toHaveProperty('createdAt');
   });
 
   it('reads subscriptions and defaults to empty array', async () => {
