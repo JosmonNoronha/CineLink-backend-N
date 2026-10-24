@@ -24,7 +24,12 @@ app.use(errorHandler);
 
 const counts = async () => {
   const metric = (await register.getMetricsAsJSON()).find((m) => m.name === 'app_client_events_total');
-  return Object.fromEntries(metric.values.map((v) => [v.labels.name, v.value]));
+  const out = {};
+  for (const v of metric.values) {
+    const key = v.labels.detail ? `${v.labels.name}:${v.labels.detail}` : v.labels.name;
+    out[key] = (out[key] || 0) + v.value;
+  }
+  return out;
 };
 const post = (body, uid = 'u-events') => request(app).post('/api/analytics/events').set('x-uid', uid).send(body);
 
@@ -41,6 +46,24 @@ test('counts a single event and a batch, whatever the field is called', async ()
   expect(c.screen_view).toBe(2);
   expect(c.search).toBe(1);
   expect(c.plain_string).toBe(1);
+});
+
+test('the app\'s real payload shape: type plus a short detail', async () => {
+  const res = await post({
+    events: [
+      { type: 'screen_view', detail: 'Settings', timestamp: 1, session_id: 's', user_id: 'secret-uid', data: { query: 'private' } },
+      { type: 'user_action', detail: 'user_login' },
+      { type: 'user_action', detail: 'bad detail!' },
+    ],
+  });
+  expect(res.body.data.accepted).toBe(3);
+  const c = await counts();
+  expect(c['screen_view:Settings']).toBe(1);
+  expect(c['user_action:user_login']).toBe(1);
+  expect(c.user_action).toBe(1); // invalid detail is dropped, event still counted by type
+  const text = await register.metrics();
+  expect(text).not.toContain('secret-uid');
+  expect(text).not.toContain('private');
 });
 
 test('nothing from the event body ends up in the metrics', async () => {

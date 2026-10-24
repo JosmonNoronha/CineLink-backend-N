@@ -3,8 +3,8 @@
 /*
   Events the mobile app reports about itself (screen opened, login, ...).
 
-  They are only counted, per event name, in the Prometheus metric app_client_events_total (visible
-  in Grafana). Nothing from the event body is stored and nobody can attach data to a user. The app
+  They are only counted, per event name and optional detail (for example name="screen_view",
+  detail="Settings"), in the Prometheus metric app_client_events_total (visible in Grafana). Nothing from the event body is stored and nobody can attach data to a user. The app
   is untrusted, so names are checked and the number of different names is capped, to stop anyone
   from filling the metrics with endless labels.
 */
@@ -13,17 +13,23 @@ const promClient = require('prom-client');
 const { register } = require('../../routes/metrics');
 
 const NAME_RE = /^[A-Za-z0-9_.:-]{1,64}$/;
-const MAX_DISTINCT_NAMES = 60;
+const MAX_DISTINCT_NAMES = 100; // distinct name+detail pairs
 const MAX_EVENTS_PER_REQUEST = 50;
 
 const counter = new promClient.Counter({
   name: 'app_client_events_total',
   help: 'Events reported by the mobile app, by event name',
-  labelNames: ['name'],
+  labelNames: ['name', 'detail'],
   registers: [register],
 });
 
 const seenNames = new Set();
+
+function detailOf(event) {
+  if (!event || typeof event !== 'object') return '';
+  const raw = event.detail;
+  return typeof raw === 'string' && NAME_RE.test(raw) ? raw : '';
+}
 
 function nameOf(event) {
   if (typeof event === 'string') return event;
@@ -44,12 +50,14 @@ function recordClientEvents(body) {
     const name = nameOf(event);
     if (!name || !NAME_RE.test(name)) continue;
 
-    let label = name;
-    if (!seenNames.has(name)) {
-      if (seenNames.size >= MAX_DISTINCT_NAMES) label = 'other';
-      else seenNames.add(name);
+    const detail = detailOf(event);
+    const key = `${name}|${detail}`;
+    let labels = { name, detail };
+    if (!seenNames.has(key)) {
+      if (seenNames.size >= MAX_DISTINCT_NAMES) labels = { name: 'other', detail: '' };
+      else seenNames.add(key);
     }
-    counter.inc({ name: label });
+    counter.inc(labels);
     accepted += 1;
   }
   return accepted;
