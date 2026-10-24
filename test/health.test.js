@@ -35,6 +35,16 @@ describe('Health endpoints', () => {
     expect(res.body).toHaveProperty('data.status', 'healthy');
   });
 
+  test('GET / answers 200 for platform health checks (also HEAD)', async () => {
+    const { createApp } = require('../src/app');
+    const app = await createApp();
+
+    const res = await request(app).get('/');
+    expect(res.status).toBe(200);
+    expect(res.body).toHaveProperty('status', 'ok');
+    expect((await request(app).head('/')).status).toBe(200);
+  });
+
   test('GET /api/status returns environment and uptime', async () => {
     const { createApp } = require('../src/app');
     const app = await createApp();

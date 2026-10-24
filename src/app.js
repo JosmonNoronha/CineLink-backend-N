@@ -128,6 +128,9 @@ async function createApp() {
   //   initializeGrafanaCloudOtlp();
   // }
 
+  // Render and uptime checkers ping "/". Answer 200 instead of counting a 404 error each time.
+  app.get('/', (_req, res) => res.json({ status: 'ok', service: 'cinelink-backend' }));
+
   app.use(env.API_PREFIX, routes);
   mountAdminPanel(app, env); // /admin, only when FIREBASE_WEB_API_KEY is set
   app.use(notFoundHandler);

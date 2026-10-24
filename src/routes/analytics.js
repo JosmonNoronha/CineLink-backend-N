@@ -1,6 +1,8 @@
 const { Router } = require('express');
 const Joi = require('joi');
+const rateLimit = require('express-rate-limit');
 const { analyticsService } = require('../services/analytics');
+const { recordClientEvents } = require('../services/analytics/clientEvents');
 const { ok } = require('../utils/helpers');
 const { authMiddleware, optionalAuth } = require('../middleware/auth');
 const { requirePermission } = require('../middleware/rbac');
@@ -84,6 +86,27 @@ router.get('/popular-content', optionalAuth, validate({ query: limitQuery }), as
   } catch (error) {
     throw analyticsError('popular content', error);
   }
+});
+
+// ── Events from the app ───────────────────────────────────────────────────────
+
+const clientEventsLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req?.user?.uid || req.ip,
+});
+
+/**
+ * POST /api/analytics/events
+ * The app reports things like "user_login". Works signed in or out. Only counted by name,
+ * nothing is stored (see services/analytics/clientEvents.js). Always answers 202 so a
+ * misbehaving client never sees an error for analytics.
+ */
+router.post('/events', optionalAuth, clientEventsLimiter, (req, res) => {
+  const accepted = recordClientEvents(req.body);
+  return res.status(202).json({ success: true, data: { accepted } });
 });
 
 module.exports = router;
