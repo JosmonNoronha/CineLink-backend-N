@@ -75,6 +75,7 @@ const schema = Joi.object({
   SENTRY_URL: Joi.string().uri({ scheme: ['https'] }).allow('').optional(),
   // Optional JSON array of extra admin links: [{"label":"...","url":"https://...","group":"...","hint":"..."}]
   ADMIN_EXTRA_LINKS: Joi.string().allow('').optional(),
+  YOUTUBE_API_KEY: Joi.string().allow('').optional(),
 }).unknown(true);
 
 const { value, error } = schema.validate(process.env, { abortEarly: false });
@@ -194,6 +195,7 @@ const env = {
   GRAFANA_URL: value.GRAFANA_URL,
   SENTRY_URL: value.SENTRY_URL,
   ADMIN_EXTRA_LINKS: value.ADMIN_EXTRA_LINKS,
+  YOUTUBE_API_KEY: value.YOUTUBE_API_KEY,
 };
 
 module.exports = { env };

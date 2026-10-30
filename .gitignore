@@ -123,3 +123,5 @@ WATCH_PROVIDERS_TESTING.md
 
 # Local secrets (e.g. Prometheus bearer token file)
 secrets/
+
+yt-spike/

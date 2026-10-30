@@ -21,6 +21,8 @@ router.use('/metrics',         metrics.router);
 router.use('/analytics',       analytics);
 router.use('/admin/moderation', require('./moderation'));
 router.use('/admin/links',      require('./adminLinks'));
+router.use('/admin/streaming', require('./streaming').adminRouter);
+router.use('/streaming',       require('./streaming').publicRouter);
 router.use('/movies',          movies);
 router.use('/tv',              tv);
 router.use('/search',          search);
