@@ -26,6 +26,7 @@ router.use('/streaming',       require('./streaming').publicRouter);
 router.use('/movies',          movies);
 router.use('/tv',              tv);
 router.use('/search',          search);
+router.use('/trending/trailers', require('./trailers'));
 router.use('/trending',        trending);
 router.use('/recommendations', recommendations);
 
