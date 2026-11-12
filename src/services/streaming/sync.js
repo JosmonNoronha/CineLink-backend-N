@@ -2,6 +2,7 @@
 
 const { toSource, mergeSources, titleLooksLikeEpisode } = require('./matcher');
 const { uploadsPlaylistId } = require('./youtube');
+const { isMultiSeason, decode } = require('./seasons');
 const { logger } = require('../../utils/logger');
 
 const MODES = {
@@ -160,7 +161,20 @@ async function syncShow({ show, mode = 'recent', youtube, catalog }) {
     })
   );
   report.episodes = after.size;
-  report.latest = numbers[numbers.length - 1] || null;
+  if (isMultiSeason(show)) {
+    // Keys fold the season in (see seasons.js), so report each season on its own.
+    const seasons = {};
+    for (const key of after.keys()) {
+      const d = decode(show, key);
+      const s = seasons[d.season] || (seasons[d.season] = { episodes: 0, latest: 0 });
+      s.episodes += 1;
+      s.latest = Math.max(s.latest, d.episode);
+    }
+    report.seasons = seasons;
+    report.latest = null;
+  } else {
+    report.latest = numbers[numbers.length - 1] || null;
+  }
   report.videosByChannel = byChannel;
   report.chunksWritten = chunksWritten;
   report.quotaUnits = youtube.usage.units - startUnits;

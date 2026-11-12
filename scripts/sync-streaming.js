@@ -6,6 +6,7 @@
     node scripts/sync-streaming.js 8630 --mode recent    # daily: newest uploads (about 8 units)
     node scripts/sync-streaming.js 8630 --mode verify    # weekly: drop videos that went away (about 50 units)
     node scripts/sync-streaming.js 8630 --mode full --dry-run   # fetch and report, write nothing
+    node scripts/sync-streaming.js all --mode recent     # every configured show, one after another (the daily job)
 
   The YouTube key is only read from the environment and is never printed.
 */
@@ -15,7 +16,7 @@ const { env } = require('../src/config/environment');
 const { createCatalog } = require('../src/services/streaming/catalog');
 const { createYouTube } = require('../src/services/streaming/youtube');
 const { syncShow } = require('../src/services/streaming/sync');
-const { getShow } = require('../src/services/streaming/shows');
+const { getShow, listShows } = require('../src/services/streaming/shows');
 
 async function main() {
   const args = process.argv.slice(2);
@@ -24,15 +25,27 @@ async function main() {
   const mode = modeIdx >= 0 ? args[modeIdx + 1] : 'recent';
   const dryRun = args.includes('--dry-run');
 
-  const show = getShow(tmdbId);
-  if (!show) throw new Error('Pass a configured TMDB id, e.g. 8630. See src/services/streaming/shows.js');
+  const shows = tmdbId === 'all' ? listShows() : [getShow(tmdbId)].filter(Boolean);
+  if (!shows.length)
+    throw new Error('Pass a configured TMDB id (e.g. 8630) or "all". See src/services/streaming/shows.js');
   if (!env.YOUTUBE_API_KEY) throw new Error('Set YOUTUBE_API_KEY in your environment first.');
 
   await initializeFirebase();
   const real = createCatalog(getFirestore());
   const catalog = dryRun ? { ...real, saveEpisodes: async () => 0, saveMeta: async () => {} } : real;
-  const report = await syncShow({ show, mode, youtube: createYouTube({ apiKey: env.YOUTUBE_API_KEY }), catalog });
-  console.log(JSON.stringify({ dryRun, ...report }, null, 2));
+  const youtube = createYouTube({ apiKey: env.YOUTUBE_API_KEY });
+  let failed = 0;
+  for (const show of shows) {
+    try {
+      const report = await syncShow({ show, mode, youtube, catalog });
+      console.log(JSON.stringify({ dryRun, ...report }, null, 2));
+    } catch (err) {
+      // One show failing must not stop the others; the exit code still reports it.
+      failed += 1;
+      console.error(`Show ${show.tmdbId} failed: ${err.message}`);
+    }
+  }
+  if (failed) throw new Error(`${failed} of ${shows.length} shows failed`);
 }
 
 main().then(() => process.exit(0)).catch((err) => {

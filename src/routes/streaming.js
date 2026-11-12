@@ -22,11 +22,13 @@ const params = Joi.object({
   tmdbId: Joi.number().integer().positive().required(),
   n: Joi.number().integer().min(1).max(100000),
 });
+const season = Joi.number().integer().min(1).max(50);
 const regionQuery = Joi.object({
   region: Joi.string()
     .length(2)
     .pattern(/^[A-Za-z]{2}$/)
     .optional(),
+  season: season.optional(),
 });
 
 /**
@@ -64,7 +66,7 @@ function createStreamingRouters(deps = {}) {
     ipLimiter,
     validate({ params, query: regionQuery }),
     async (req, res) => {
-      const data = await build().service.availability(req.params.tmdbId, req.query.region);
+      const data = await build().service.availability(req.params.tmdbId, req.query.region, req.query.season);
       res.set('Cache-Control', 'public, max-age=300');
       return ok(res, data);
     }
@@ -75,7 +77,12 @@ function createStreamingRouters(deps = {}) {
     ipLimiter,
     validate({ params, query: regionQuery }),
     async (req, res) => {
-      const data = await build().service.episode(req.params.tmdbId, req.params.n, req.query.region);
+      const data = await build().service.episode(
+        req.params.tmdbId,
+        req.params.n,
+        req.query.region,
+        req.query.season
+      );
       res.set('Cache-Control', 'public, max-age=300');
       return ok(res, data);
     }
@@ -117,10 +124,13 @@ function createStreamingRouters(deps = {}) {
 
   adminRouter.get(
     '/shows/:tmdbId/report',
-    validate({ params, query: Joi.object({ total: Joi.number().integer().min(1).max(100000) }) }),
+    validate({
+      params,
+      query: Joi.object({ total: Joi.number().integer().min(1).max(100000), season: season.optional() }),
+    }),
     async (req, res) => {
       res.set('Cache-Control', 'no-store');
-      return ok(res, await build().service.report(req.params.tmdbId, req.query.total));
+      return ok(res, await build().service.report(req.params.tmdbId, req.query.total, req.query.season));
     }
   );
 

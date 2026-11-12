@@ -1,6 +1,7 @@
 'use strict';
 
 const { toSource, mergeSources } = require('./matcher');
+const { label, searchQuery, missingKeys } = require('./seasons');
 
 /**
  * Look for specific missing episodes with a YouTube search (100 quota units each).
@@ -22,19 +23,19 @@ async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000 })
     }
     let results;
     try {
-      results = await youtube.searchVideos(`${show.title} Episode ${n}`);
+      results = await youtube.searchVideos(searchQuery(show, n));
     } catch (err) {
       if (err.code === 'YOUTUBE_QUOTA') {
         stoppedEarly = 'quota';
         break;
       }
-      why[n] = err.code || 'FAILED';
+      why[label(show, n)] = err.code || 'FAILED';
       continue;
     }
     tried.push(n);
     const mine = results.filter((r) => ownById.has(r.channelId));
     if (!mine.length) {
-      why[n] = results.length ? 'no result from our channels' : 'no results';
+      why[label(show, n)] = results.length ? 'no result from our channels' : 'no results';
       continue;
     }
     const details = await youtube.videoDetails(mine.map((r) => r.videoId));
@@ -47,12 +48,12 @@ async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000 })
       }
       const hit = toSource({ ...r, ...d }, show, ownById.get(r.channelId));
       if (hit && hit.n === n) added.set(n, [...(added.get(n) || []), hit.src]);
-      else if (hit) reasons.push(`title says episode ${hit.n}`);
+      else if (hit) reasons.push(`title says episode ${label(show, hit.n)}`);
       else if (d.seconds < show.minSeconds) reasons.push(`short (${Math.round(d.seconds)}s)`);
       else if (d.embeddable === false) reasons.push('not embeddable');
       else reasons.push(`title not accepted: ${r.title.slice(0, 70)}`);
     }
-    if (!added.has(n)) why[n] = reasons.slice(0, 3).join(' | ');
+    if (!added.has(n)) why[label(show, n)] = reasons.slice(0, 3).join(' | ');
   }
   return { added, tried, why, stoppedEarly, quotaUnits: youtube.usage.units - startUnits };
 }
@@ -64,4 +65,4 @@ const missingNumbers = (have, upTo) => {
   return out;
 };
 
-module.exports = { fillGaps, missingNumbers, mergeSources };
+module.exports = { fillGaps, missingNumbers, missingKeys, mergeSources };

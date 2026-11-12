@@ -6,6 +6,8 @@
     node scripts/fill-streaming-gaps.js 8630 --limit 20 --dry-run    # search 20, show what it would add and why others fail
     node scripts/fill-streaming-gaps.js 8630 --limit 30              # search 30 and save what is found
     options: --from N (start at episode N)  --upto N (default: latest episode in the catalog)
+             --season N (shows with several seasons: one season only; default all seasons)
+    Multi-season shows (e.g. Lie Hard, 292203) print episodes as "S2E5".
 
   The YouTube key is only read from the environment and is never printed.
 */
@@ -14,7 +16,8 @@ const { initializeFirebase, getFirestore } = require('../src/config/firebase');
 const { env } = require('../src/config/environment');
 const { createCatalog } = require('../src/services/streaming/catalog');
 const { createYouTube } = require('../src/services/streaming/youtube');
-const { fillGaps, missingNumbers, mergeSources } = require('../src/services/streaming/gaps');
+const { fillGaps, missingKeys, mergeSources } = require('../src/services/streaming/gaps');
+const { decode, label } = require('../src/services/streaming/seasons');
 const { getShow } = require('../src/services/streaming/shows');
 
 const opt = (args, name, d) => {
@@ -33,13 +36,13 @@ async function main() {
   await initializeFirebase();
   const catalog = createCatalog(getFirestore());
   const have = await catalog.loadEpisodes(show.tmdbId);
-  const latest = Math.max(0, ...have.keys());
-  const upTo = opt(args, '--upto', latest);
+  const upTo = args.includes('--upto') ? opt(args, '--upto') : undefined;
   const from = opt(args, '--from', 1);
-  const missing = missingNumbers(have, upTo).filter((n) => n >= from);
+  const season = args.includes('--season') ? opt(args, '--season') : undefined;
+  const missing = missingKeys(show, have, { season, upTo }).filter((k) => decode(show, k).episode >= from);
 
   if (listOnly) {
-    console.log(JSON.stringify({ upTo, missingCount: missing.length, missing }));
+    console.log(JSON.stringify({ upTo: upTo ?? 'latest', missingCount: missing.length, missing: missing.map((k) => label(show, k)) }));
     return;
   }
 
@@ -61,7 +64,7 @@ async function main() {
         dryRun,
         missingBefore: missing.length,
         searched: res.tried.length,
-        found: [...res.added.keys()],
+        found: [...res.added.keys()].map((k) => label(show, k)),
         notFound: res.why,
         stoppedEarly: res.stoppedEarly,
         quotaUnits: res.quotaUnits,

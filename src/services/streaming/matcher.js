@@ -5,6 +5,8 @@
   and which video to play for a viewer in a given country. No network, no database.
 */
 
+const { isMultiSeason, encode } = require('./seasons');
+
 const HARD_EXCLUDE =
   /\b(full movie|compilation|weekly|reli[vw]|recap|teaser|promo|trailer|behind the scenes|making of|interview)\b|#shorts|\d{3,5}\s*(?:to|-|–|—)\s*\d{3,5}/i;
 
@@ -23,6 +25,14 @@ function parseEpisodeNumber(title) {
     if (m) return Number(m[1]);
   }
   return null;
+}
+
+/** Season from a title ("S2 Ep 01", "S2E05", "Season 2"), or null. An apostrophe-s ("Gaurav's 2") is not a season. */
+function parseSeason(title) {
+  const t = String(title || '');
+  const m = t.match(/\bseason\s*0?(\d{1,2})\b/i) || t.match(/(?<![\w'’])S0?(\d{1,2})(?!\d)/i);
+  const n = m ? Number(m[1]) : null;
+  return n && n <= 50 ? n : null;
 }
 
 /** Compact region rule from the YouTube API: {a:[..allowed]} or {b:[..blocked]} or null. */
@@ -68,10 +78,15 @@ function toSource(video, show, channel) {
   if ((video.seconds || 0) < show.minSeconds) return null;
   if (video.embeddable === false || (video.privacy && video.privacy !== 'public') || video.ageRestricted)
     return null;
-  const n = parseEpisodeNumber(title);
-  if (!n || n > show.maxEpisode) return null;
+  const episode = parseEpisodeNumber(title);
+  if (!episode || episode > show.maxEpisode) return null;
+  // Multi-season shows: a title without a season is season 1. `n` is the catalog key (see seasons.js).
+  const season = isMultiSeason(show) ? parseSeason(title) || 1 : show.season || 1;
+  const n = encode(show, season, episode);
   return {
     n,
+    season,
+    episode,
     src: {
       v: video.videoId,
       c: channel.key,
@@ -106,6 +121,7 @@ function pickFor(sources, country, blocked = new Set()) {
 module.exports = {
   titleLooksLikeEpisode,
   parseEpisodeNumber,
+  parseSeason,
   parseDuration,
   compactRegion,
   playableIn,

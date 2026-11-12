@@ -23,14 +23,14 @@ jobs:
       - run: npm install --omit=dev --no-audit --no-fund --no-package-lock
       - name: Recent sync
         if: github.event_name == 'schedule' || inputs.mode == 'recent'
-        run: node scripts/sync-streaming.js 8630 --mode recent
+        run: node scripts/sync-streaming.js all --mode recent
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
       - name: Verify stored videos (Sundays or manual)
         if: github.event.schedule == '30 7 * * 0' || inputs.mode == 'verify'
-        run: node scripts/sync-streaming.js 8630 --mode verify
+        run: node scripts/sync-streaming.js all --mode verify
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON_BASE64 }}
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}

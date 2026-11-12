@@ -12,6 +12,8 @@
     the playlists named per channel (full sync only). Every playlist video still has to pass the title,
     length, embeddable and uploader checks.
   - Lower priority number = preferred when an episode is on several channels.
+  - A show whose seasons restart at episode 1 sets seasonInTitle: true. The season is then read from the
+    title ("S2 Ep 01"; no season in the title means season 1). See seasons.js.
 */
 
 const SHOWS = {
@@ -65,9 +67,31 @@ const SHOWS = {
       },
     ],
   },
+  292203: {
+    tmdbId: 292203,
+    season: 1,
+    seasonInTitle: true, // S1 titles say "Ep. 1", S2 titles say "S2 Ep 01"
+    title: 'Lie Hard',
+    match: /lie\s*hard/i,
+    maxEpisode: 200, // must stay below 1000 for seasonInTitle shows
+    minSeconds: 900, // full episodes run about an hour
+    channels: [
+      {
+        key: 'main',
+        id: 'UCeP5_FL11TnvXuvrFvALJyA',
+        label: 'Gaurav Kapoor',
+        priority: 1,
+      },
+    ],
+  },
 };
 
 const getShow = (tmdbId) => SHOWS[Number(tmdbId)] || null;
 const listShows = () => Object.values(SHOWS);
+
+for (const show of Object.values(SHOWS)) {
+  if (show.seasonInTitle && show.maxEpisode >= 1000)
+    throw new Error(`streaming show ${show.tmdbId}: maxEpisode must be below 1000 when seasonInTitle is set`);
+}
 
 module.exports = { SHOWS, getShow, listShows };
