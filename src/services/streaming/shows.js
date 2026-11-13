@@ -84,6 +84,22 @@ const SHOWS = {
       },
     ],
   },
+     275204: {
+     tmdbId: 275204,
+     season: 1,
+     title: 'Dhindora',
+     match: /dhindora/i,
+     maxEpisode: 20, // season 1 has 8 episodes; this only keeps stray numbers out
+     minSeconds: 600, // full episodes run 20+ minutes
+     channels: [
+       {
+         key: 'bbkivines',
+         id: 'UCqwUrj10mAEsqezcItqvwEw',
+         label: 'BB Ki Vines',
+         priority: 1,
+       },
+     ],
+   },
 };
 
 const getShow = (tmdbId) => SHOWS[Number(tmdbId)] || null;

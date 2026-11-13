@@ -50,7 +50,9 @@ function fakeYouTube(uploads, { search = {} } = {}) {
     async listUploads(playlistId, { max }) {
       usage.units += 1;
       return playlistId === uploadsPlaylistId(ch.id)
-        ? uploads.slice(0, max).map((u) => ({ videoId: vid(u.n), title: u.title, publishedAt: '2026-10-01T00:00:00Z' }))
+        ? uploads
+            .slice(0, max)
+            .map((u) => ({ videoId: vid(u.n), title: u.title, publishedAt: '2026-10-01T00:00:00Z' }))
         : [];
     },
     async videoDetails(ids) {
@@ -110,11 +112,19 @@ describe('seasons helpers', () => {
   });
 
   test('missingKeys works per season, never across the gap between seasons', () => {
-    const have = new Map([[1, [{}]], [3, [{}]], [1001, [{}]], [1004, [{}]]]);
+    const have = new Map([
+      [1, [{}]],
+      [3, [{}]],
+      [1001, [{}]],
+      [1004, [{}]],
+    ]);
     expect(missingKeys(lie, have)).toEqual([2, 1002, 1003]);
     expect(missingKeys(lie, have, { season: 2 })).toEqual([1002, 1003]);
     expect(missingKeys(lie, have).map((k) => seasons.label(lie, k))).toEqual(['S1E2', 'S2E2', 'S2E3']);
-    const tm = new Map([[1, [{}]], [4, [{}]]]);
+    const tm = new Map([
+      [1, [{}]],
+      [4, [{}]],
+    ]);
     expect(missingKeys(tmkoc, tm)).toEqual([2, 3]);
   });
 
@@ -124,7 +134,14 @@ describe('seasons helpers', () => {
 });
 
 describe('toSource for a multi-season show', () => {
-  const video = (title, o = {}) => ({ videoId: vid(1), title, seconds: 3500, embeddable: true, privacy: 'public', ...o });
+  const video = (title, o = {}) => ({
+    videoId: vid(1),
+    title,
+    seconds: 3500,
+    embeddable: true,
+    privacy: 'public',
+    ...o,
+  });
 
   test('season 1 title without a season, and season 2 title', () => {
     const a = m.toSource(video('LIE HARD Ep. 1 | Comedians bluff'), lie, ch);
@@ -154,8 +171,12 @@ describe('toSource for a multi-season show', () => {
 
 describe('sync + service for Lie Hard', () => {
   const uploads = [
-    s1(1), s1(2), s1(3),
-    s2(1), s2(2), s2(4), // S2E3 missing
+    s1(1),
+    s1(2),
+    s1(3),
+    s2(1),
+    s2(2),
+    s2(4), // S2E3 missing
     { n: 900, title: 'LIE HARD Official Trailer S2', seconds: 90 },
     { n: 901, title: 'Gaurav Kapoor | Stand-up special', seconds: 3000 },
   ];
@@ -199,7 +220,10 @@ describe('sync + service for Lie Hard', () => {
 
     // a normal show keeps the compact shape: no per-season episode lists
     const cat = createCatalog(fakeFirestore());
-    await cat.saveEpisodes(8630, new Map([[7, [{ v: 'aaaaaaaaaaa', c: 'official', p: 1, s: 1300, r: null, t: 't', d: 1 }]]]));
+    await cat.saveEpisodes(
+      8630,
+      new Map([[7, [{ v: 'aaaaaaaaaaa', c: 'official', p: 1, s: 1300, r: null, t: 't', d: 1 }]]])
+    );
     const t = await createStreamingService({ catalog: cat }).availability(8630, 'IN');
     expect(t.seasons).toEqual([{ season: 1, count: 1, latest: 7 }]);
     expect(t.episodes).toEqual([[7, 'aaaaaaaaaaa', 0]]);
@@ -226,10 +250,15 @@ describe('sync + service for Lie Hard', () => {
     const { service } = await build();
     expect((await service.episode(292203, 1, 'IN', 2)).videoId).toBe(vid(101));
     expect((await service.episode(292203, 1, 'IN')).videoId).toBe(vid(1));
-    await expect(service.episode(292203, 3, 'IN', 2)).rejects.toMatchObject({ code: 'EPISODE_NOT_AVAILABLE' });
+    await expect(service.episode(292203, 3, 'IN', 2)).rejects.toMatchObject({
+      code: 'EPISODE_NOT_AVAILABLE',
+    });
     const r = await service.report(292203, undefined, 2);
     expect(r).toMatchObject({ season: 2, episodesWithVideo: 3, totalChecked: 4, biggestHoles: ['3-3 (1)'] });
-    expect(r.seasons).toEqual({ 1: { episodesWithVideo: 3, latest: 3 }, 2: { episodesWithVideo: 3, latest: 4 } });
+    expect(r.seasons).toEqual({
+      1: { episodesWithVideo: 3, latest: 3 },
+      2: { episodesWithVideo: 3, latest: 4 },
+    });
     const r1 = await service.report(292203);
     expect(r1).toMatchObject({ season: 1, totalChecked: 3, biggestHoles: [] });
   });
@@ -253,11 +282,20 @@ describe('a normal show through the same code', () => {
   test('episode numbers, list entry and report are exactly as before', async () => {
     const catalog = createCatalog(fakeFirestore());
     const src = (v, c, p) => ({ v, c, p, s: 1300, r: null, t: 't', d: 1 });
-    await catalog.saveEpisodes(8630, new Map([[4851, [src('aaaaaaaaaaa', 'official', 1)]], [2, [src('bbbbbbbbbbb', 'sab', 3)]]]));
+    await catalog.saveEpisodes(
+      8630,
+      new Map([
+        [4851, [src('aaaaaaaaaaa', 'official', 1)]],
+        [2, [src('bbbbbbbbbbb', 'sab', 3)]],
+      ])
+    );
     const service = createStreamingService({ catalog });
     const a = await service.availability(8630, 'IN');
     expect(a).toMatchObject({ tmdbId: 8630, title: tmkoc.title, season: 1, count: 2, latest: 4851 });
-    expect(a.episodes).toEqual([[2, 'bbbbbbbbbbb', 0], [4851, 'aaaaaaaaaaa', 0]]);
+    expect(a.episodes).toEqual([
+      [2, 'bbbbbbbbbbb', 0],
+      [4851, 'aaaaaaaaaaa', 0],
+    ]);
     const list = await service.listShows('IN');
     expect(list).toHaveLength(1);
     expect(list[0]).toMatchObject({ tmdbId: 8630, title: tmkoc.title, season: 1, count: 2, latest: 4851 });
@@ -269,6 +307,10 @@ describe('a normal show through the same code', () => {
   });
 
   test('every configured show is listed by listShows', () => {
-    expect(listShows().map((s) => s.tmdbId)).toEqual([8630, 292203]);
+    expect(
+      listShows()
+        .map((s) => s.tmdbId)
+        .sort((a, b) => a - b)
+    ).toEqual([8630, 275204, 292203]);
   });
 });
