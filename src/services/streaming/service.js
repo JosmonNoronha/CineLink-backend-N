@@ -54,10 +54,20 @@ function createStreamingService({ catalog, now = () => Date.now() }) {
       tmdbId: show.tmdbId,
       title: show.title,
       season: wanted,
-      // every season this viewer can watch, so the app can offer a season switcher
+      // Every season this viewer can watch. A multi-season show carries each season's episodes right here,
+      // so the app loads the whole show in one request and switching seasons needs no further call.
+      // (A single-season show keeps the compact shape: its episodes are the top-level list below.)
       seasons: [...bySeason.keys()]
         .sort((a, b) => a - b)
-        .map((n) => ({ season: n, count: bySeason.get(n).length, latest: bySeason.get(n).at(-1)[0] })),
+        .map((n) => {
+          const list = bySeason.get(n);
+          return {
+            season: n,
+            count: list.length,
+            latest: list[list.length - 1][0],
+            ...(isMultiSeason(show) ? { episodes: list } : {}),
+          };
+        }),
       region,
       count: rows.length,
       latest: rows.length ? rows[rows.length - 1][0] : null,

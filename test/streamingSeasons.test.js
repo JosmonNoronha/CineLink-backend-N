@@ -181,10 +181,13 @@ describe('sync + service for Lie Hard', () => {
     const a1 = await service.availability(292203, 'IN');
     expect(a1.season).toBe(1);
     expect(a1.episodes.map((r) => r[0])).toEqual([1, 2, 3]);
-    expect(a1.seasons).toEqual([
-      { season: 1, count: 3, latest: 3 },
-      { season: 2, count: 3, latest: 4 },
+    expect(a1.seasons.map((x) => [x.season, x.count, x.latest])).toEqual([
+      [1, 3, 3],
+      [2, 3, 4],
     ]);
+    // all seasons arrive in this one response, so the app never needs a second request
+    expect(a1.seasons[1].episodes.map((r) => r[0])).toEqual([1, 2, 4]);
+    expect(a1.seasons[1].episodes[0][1]).toBe(vid(101));
     const a2 = await service.availability(292203, 'IN', 2);
     expect(a2.season).toBe(2);
     expect(a2.episodes.map((r) => r[0])).toEqual([1, 2, 4]);
@@ -193,6 +196,13 @@ describe('sync + service for Lie Hard', () => {
     const a3 = await service.availability(292203, 'IN', 3);
     expect(a3.count).toBe(0);
     expect(a3.seasons).toHaveLength(2);
+
+    // a normal show keeps the compact shape: no per-season episode lists
+    const cat = createCatalog(fakeFirestore());
+    await cat.saveEpisodes(8630, new Map([[7, [{ v: 'aaaaaaaaaaa', c: 'official', p: 1, s: 1300, r: null, t: 't', d: 1 }]]]));
+    const t = await createStreamingService({ catalog: cat }).availability(8630, 'IN');
+    expect(t.seasons).toEqual([{ season: 1, count: 1, latest: 7 }]);
+    expect(t.episodes).toEqual([[7, 'aaaaaaaaaaa', 0]]);
   });
 
   test('the show list has one card per show, covering all its seasons', async () => {
