@@ -89,6 +89,7 @@ const SHOWS = {
      season: 1,
      title: 'Dhindora',
      match: /dhindora/i,
+     nameMatch: true,
      maxEpisode: 20, // season 1 has 8 episodes; this only keeps stray numbers out
      minSeconds: 600, // full episodes run 20+ minutes
      channels: [
@@ -96,6 +97,24 @@ const SHOWS = {
          key: 'bbkivines',
          id: 'UCqwUrj10mAEsqezcItqvwEw',
          label: 'BB Ki Vines',
+         priority: 1,
+       },
+     ],
+   },
+      282836: {
+     tmdbId: 282836,
+     season: 1,
+     title: 'Ekaki',
+     match: /ekaki/i,
+     episodeWords: ['chapter'], // titles say "Chapter 5: The Conqueror", not "Episode 5"
+     nameMatch: true, // and the finale may carry only its name
+     maxEpisode: 10,
+     minSeconds: 900, // reactions and clips are shorter
+     channels: [
+       {
+         key: 'acv',
+         id: 'UC7eHZXheF8nVOfwB2PEslMw',
+         label: 'Ashish Chanchlani Vines',
          priority: 1,
        },
      ],

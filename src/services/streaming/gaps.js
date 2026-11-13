@@ -8,7 +8,7 @@ const { label, searchQuery, missingKeys } = require('./seasons');
  * Only videos uploaded by the show's own channels count, and the usual rules apply.
  * Returns { added: Map n -> sources, tried: [n], why: { n: reason } }.
  */
-async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000 }) {
+async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000, names }) {
   const ownById = new Map(show.channels.map((c) => [c.id, c]));
   const added = new Map();
   const tried = [];
@@ -23,7 +23,9 @@ async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000 })
     }
     let results;
     try {
-      results = await youtube.searchVideos(searchQuery(show, n));
+      // Without episode numbers in the titles, a number search is useless: search by the episode's name instead.
+      const name = names?.byKey.get(n);
+      results = await youtube.searchVideos(name ? `${show.title} ${name}` : searchQuery(show, n));
     } catch (err) {
       if (err.code === 'YOUTUBE_QUOTA') {
         stoppedEarly = 'quota';
@@ -46,7 +48,7 @@ async function fillGaps({ show, youtube, missing, limit = 30, maxUnits = 4000 })
         reasons.push('video unavailable');
         continue;
       }
-      const hit = toSource({ ...r, ...d }, show, ownById.get(r.channelId));
+      const hit = toSource({ ...r, ...d }, show, ownById.get(r.channelId), names);
       if (hit && hit.n === n) added.set(n, [...(added.get(n) || []), hit.src]);
       else if (hit) reasons.push(`title says episode ${label(show, hit.n)}`);
       else if (d.seconds < show.minSeconds) reasons.push(`short (${Math.round(d.seconds)}s)`);

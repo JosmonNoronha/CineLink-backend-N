@@ -9,7 +9,8 @@
              --season N (shows with several seasons: one season only; default all seasons)
     Multi-season shows (e.g. Lie Hard, 292203) print episodes as "S2E5".
 
-  The YouTube key is only read from the environment and is never printed.
+  Shows with `nameMatch: true` are searched by episode name (TMDB_API_KEY needed), since their titles have no numbers.
+  The YouTube and TMDB keys are only read from the environment and are never printed.
 */
 
 const { initializeFirebase, getFirestore } = require('../src/config/firebase');
@@ -19,6 +20,8 @@ const { createYouTube } = require('../src/services/streaming/youtube');
 const { fillGaps, missingKeys, mergeSources } = require('../src/services/streaming/gaps');
 const { decode, label } = require('../src/services/streaming/seasons');
 const { getShow } = require('../src/services/streaming/shows');
+const { createEpisodeNames } = require('../src/services/streaming/tmdbNames');
+const { buildNameIndex } = require('../src/services/streaming/names');
 
 const opt = (args, name, d) => {
   const i = args.indexOf(name);
@@ -46,8 +49,16 @@ async function main() {
     return;
   }
 
+  let names;
+  if (show.nameMatch) {
+    const tmdbKey = env.TMDB_API_KEY || process.env.TMDB_API_KEY;
+    if (!tmdbKey) console.error('TMDB_API_KEY is not set: searching by episode number only.');
+    else names = buildNameIndex(await createEpisodeNames({ apiKey: tmdbKey }).forShow(show), show);
+  }
+
   const limit = opt(args, '--limit', 30);
   const res = await fillGaps({
+    names,
     show,
     youtube: createYouTube({ apiKey: env.YOUTUBE_API_KEY }),
     missing,

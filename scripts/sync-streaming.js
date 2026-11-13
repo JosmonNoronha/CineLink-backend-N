@@ -8,7 +8,8 @@
     node scripts/sync-streaming.js 8630 --mode full --dry-run   # fetch and report, write nothing
     node scripts/sync-streaming.js all --mode recent     # every configured show, one after another (the daily job)
 
-  The YouTube key is only read from the environment and is never printed.
+  Shows with `nameMatch: true` (titles without an episode number) also need TMDB_API_KEY to read the episode names.
+  The YouTube and TMDB keys are only read from the environment and are never printed.
 */
 
 const { initializeFirebase, getFirestore } = require('../src/config/firebase');
@@ -16,6 +17,7 @@ const { env } = require('../src/config/environment');
 const { createCatalog } = require('../src/services/streaming/catalog');
 const { createYouTube } = require('../src/services/streaming/youtube');
 const { syncShow } = require('../src/services/streaming/sync');
+const { createEpisodeNames } = require('../src/services/streaming/tmdbNames');
 const { getShow, listShows } = require('../src/services/streaming/shows');
 
 async function main() {
@@ -34,10 +36,12 @@ async function main() {
   const real = createCatalog(getFirestore());
   const catalog = dryRun ? { ...real, saveEpisodes: async () => 0, saveMeta: async () => {} } : real;
   const youtube = createYouTube({ apiKey: env.YOUTUBE_API_KEY });
+  const tmdbKey = env.TMDB_API_KEY || process.env.TMDB_API_KEY;
+  const episodeNames = tmdbKey ? createEpisodeNames({ apiKey: tmdbKey }) : undefined;
   let failed = 0;
   for (const show of shows) {
     try {
-      const report = await syncShow({ show, mode, youtube, catalog });
+      const report = await syncShow({ show, mode, youtube, catalog, episodeNames });
       console.log(JSON.stringify({ dryRun, ...report }, null, 2));
     } catch (err) {
       // One show failing must not stop the others; the exit code still reports it.

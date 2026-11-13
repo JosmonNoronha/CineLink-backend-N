@@ -3,6 +3,7 @@
 const { toSource, mergeSources, titleLooksLikeEpisode } = require('./matcher');
 const { uploadsPlaylistId } = require('./youtube');
 const { isMultiSeason, decode } = require('./seasons');
+const { buildNameIndex } = require('./names');
 const { logger } = require('../../utils/logger');
 
 const MODES = {
@@ -14,33 +15,37 @@ const MODES = {
 const cloneMap = (m) => new Map([...m].map(([n, list]) => [n, list.map((s) => ({ ...s }))]));
 
 /** Collect sources for one channel from its uploads. */
-async function collectChannel(youtube, show, channel, max) {
+async function collectChannel(youtube, show, channel, max, names) {
   const uploads = (await youtube.listUploads(uploadsPlaylistId(channel.id), { max })).filter((u) =>
     show.match.test(u.title)
   );
   const details = await youtube.videoDetails(uploads.map((u) => u.videoId));
   const found = new Map();
+  let byName = 0;
   for (const u of uploads) {
     const d = details.get(u.videoId);
     if (!d) continue;
-    const hit = toSource({ ...u, ...d }, show, channel);
-    if (hit) found.set(hit.n, [...(found.get(hit.n) || []), hit.src]);
+    const hit = toSource({ ...u, ...d }, show, channel, names);
+    if (!hit) continue;
+    found.set(hit.n, [...(found.get(hit.n) || []), hit.src]);
+    if (hit.by === 'name') byName += 1;
   }
-  return { found, seen: uploads.length, ids: uploads.map((u) => u.videoId) };
+  return { found, seen: uploads.length, ids: uploads.map((u) => u.videoId), byName };
 }
 
 /**
  * Older episodes live outside the capped uploads list, in the channel's playlists. A playlist can
  * hold other people's videos, so a video counts only when one of the show's own channels uploaded it.
  */
-async function collectPlaylists(youtube, show, channel, skip) {
+async function collectPlaylists(youtube, show, channel, skip, names) {
   const ownById = new Map(show.channels.map((c) => [c.id, c]));
   const found = new Map();
   let seen = 0;
+  let byName = 0;
   const tried = new Set(skip);
   for (const playlistId of channel.playlists || []) {
     const items = (await youtube.listUploads(playlistId, { max: 6000 })).filter(
-      (u) => !tried.has(u.videoId) && titleLooksLikeEpisode(u.title, show)
+      (u) => !tried.has(u.videoId) && titleLooksLikeEpisode(u.title, show, names)
     );
     items.forEach((u) => tried.add(u.videoId));
     seen += items.length;
@@ -49,11 +54,13 @@ async function collectPlaylists(youtube, show, channel, skip) {
       const d = details.get(u.videoId);
       const owner = d && ownById.get(d.channelId);
       if (!owner) continue;
-      const hit = toSource({ ...u, ...d }, show, owner);
-      if (hit) found.set(hit.n, [...(found.get(hit.n) || []), hit.src]);
+      const hit = toSource({ ...u, ...d }, show, owner, names);
+      if (!hit) continue;
+      found.set(hit.n, [...(found.get(hit.n) || []), hit.src]);
+      if (hit.by === 'name') byName += 1;
     }
   }
-  return { found, seen, tried };
+  return { found, seen, tried, byName };
 }
 
 /** Drop stored sources whose video is gone, private, no longer embeddable, or whose regions changed. */
@@ -87,13 +94,31 @@ async function verifyStored(youtube, current) {
  *  full   - rebuild from every upload of every channel
  *  recent - merge the newest uploads into what is stored
  *  verify - drop videos that went away
+ * episodeNames (optional, tmdbNames.js): lets a show with `nameMatch: true` match titles that have no episode number.
  */
-async function syncShow({ show, mode = 'recent', youtube, catalog }) {
+async function syncShow({ show, mode = 'recent', youtube, catalog, episodeNames }) {
   if (!MODES[mode]) throw new Error(`Unknown sync mode: ${mode}`);
   const before = await catalog.loadEpisodes(show.tmdbId);
   let after = cloneMap(before);
   const report = { mode, show: show.tmdbId, channels: {}, removedVideos: 0 };
   const startUnits = youtube.usage.units;
+
+  // Episode names are only fetched for shows that opt in, and a failure here never stops the number matching.
+  let names = null;
+  if (show.nameMatch && mode !== 'verify') {
+    if (!episodeNames) {
+      report.nameMatch = { error: 'no TMDB access (set TMDB_API_KEY)' };
+    } else {
+      try {
+        names = buildNameIndex(await episodeNames.forShow(show), show);
+        report.nameMatch = { names: names.entries.length, skipped: names.skipped };
+      } catch (err) {
+        report.nameMatch = { error: err.message };
+        logger.warn({ message: 'streaming sync: episode names unavailable', show: show.tmdbId });
+      }
+    }
+  }
+  let matchedByName = 0;
 
   if (mode === 'verify') {
     const v = await verifyStored(youtube, after);
@@ -107,10 +132,12 @@ async function syncShow({ show, mode = 'recent', youtube, catalog }) {
     const known = new Set();
     for (const channel of show.channels) {
       try {
-        const { found, seen, ids } = await collectChannel(youtube, show, channel, MODES[mode].max);
+        const { found, seen, ids, byName } = await collectChannel(youtube, show, channel, MODES[mode].max, names);
+        matchedByName += byName;
         if (mode === 'full' && channel.playlists?.length) {
           for (const id of ids) known.add(id);
-          const extra = await collectPlaylists(youtube, show, channel, known);
+          const extra = await collectPlaylists(youtube, show, channel, known, names);
+          matchedByName += extra.byName;
           extra.tried.forEach((id) => known.add(id));
           for (const [n, list] of extra.found) found.set(n, [...(found.get(n) || []), ...list]);
           report.channels[channel.key] = { playlistVideos: extra.seen };
@@ -175,6 +202,7 @@ async function syncShow({ show, mode = 'recent', youtube, catalog }) {
   } else {
     report.latest = numbers[numbers.length - 1] || null;
   }
+  if (report.nameMatch && !report.nameMatch.error) report.nameMatch.videosMatchedByName = matchedByName;
   report.videosByChannel = byChannel;
   report.chunksWritten = chunksWritten;
   report.quotaUnits = youtube.usage.units - startUnits;

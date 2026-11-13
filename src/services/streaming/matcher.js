@@ -5,13 +5,17 @@
   and which video to play for a viewer in a given country. No network, no database.
 */
 
-const { isMultiSeason, encode } = require('./seasons');
+const { isMultiSeason, encode, decode } = require('./seasons');
+const { matchName } = require('./names');
 
 const HARD_EXCLUDE =
   /\b(full movie|compilation|weekly|reli[vw]|recap|teaser|promo|trailer|behind the scenes|making of|interview)\b|#shorts|\d{3,5}\s*(?:to|-|–|—)\s*\d{3,5}/i;
 
-/** Episode number from a title, or null. Ranges ("Ep 01 - 05") and years ("30 Sep 2026") are rejected. */
-function parseEpisodeNumber(title) {
+/**
+ * Episode number from a title, or null. Ranges ("Ep 01 - 05") and years ("30 Sep 2026") are rejected.
+ * `words` = extra words a show uses for "episode" (shows.js `episodeWords`, e.g. ['chapter']).
+ */
+function parseEpisodeNumber(title, words) {
   const t = String(title || '');
   const patterns = [
     /\b(?:episode|episodes|epi|ep)\s*[.!]?\s*[-:#]?\s*(\d{1,5})\b(?!\s*(?:-|–|—|to)\s*\d{1,5}(?!\d|\s*(?:st|nd|rd|th)\b))/i,
@@ -20,6 +24,10 @@ function parseEpisodeNumber(title) {
     /\bE(\d{1,5})\b/,
     /#\s*(\d{3,5})\b/,
   ];
+  const extra = (words || []).map((w) => String(w).replace(/[^\p{L}\p{N}]/gu, '')).filter(Boolean);
+  if (extra.length) {
+    patterns.push(new RegExp(`\\b(?:${extra.join('|')})\\s*[.!]?\\s*[-:#]?\\s*(\\d{1,3})\\b(?!\\s*(?:-|–|—|to)\\s*\\d)`, 'i'));
+  }
   for (const re of patterns) {
     const m = t.match(re);
     if (m) return Number(m[1]);
@@ -59,34 +67,49 @@ function parseDuration(iso) {
   return Number(d) * 86400 + Number(h) * 3600 + Number(mi) * 60 + Number(s);
 }
 
-/** Title-only check, used before spending quota on video details. */
-function titleLooksLikeEpisode(title, show) {
+/** Title-only check, used before spending quota on video details. `names` = name index (names.js), optional. */
+function titleLooksLikeEpisode(title, show, names) {
   const t = String(title || '');
   if (!show.match.test(t) || HARD_EXCLUDE.test(t)) return false;
-  const n = parseEpisodeNumber(t);
-  return Boolean(n) && n <= show.maxEpisode;
+  const n = parseEpisodeNumber(t, show.episodeWords);
+  if (n) return n <= show.maxEpisode;
+  return matchName(t, names) !== null;
 }
 
 /**
  * Turn one video into a source for an episode, or null if it is not a single full episode.
  * video: { videoId, title, publishedAt, seconds, embeddable, privacy, ageRestricted, region (compact: {a:[..]} | {b:[..]} | null) }
+ * names: optional name index (names.js). Used only when the title has no episode number.
  */
-function toSource(video, show, channel) {
+function toSource(video, show, channel, names) {
   const title = String(video.title || '');
   if (!show.match.test(title)) return null;
   if (HARD_EXCLUDE.test(title)) return null;
   if ((video.seconds || 0) < show.minSeconds) return null;
   if (video.embeddable === false || (video.privacy && video.privacy !== 'public') || video.ageRestricted)
     return null;
-  const episode = parseEpisodeNumber(title);
-  if (!episode || episode > show.maxEpisode) return null;
-  // Multi-season shows: a title without a season is season 1. `n` is the catalog key (see seasons.js).
-  const season = isMultiSeason(show) ? parseSeason(title) || 1 : show.season || 1;
-  const n = encode(show, season, episode);
+
+  let n;
+  let season;
+  let episode = parseEpisodeNumber(title, show.episodeWords);
+  let by = 'number';
+  if (episode) {
+    if (episode > show.maxEpisode) return null;
+    // Multi-season shows: a title without a season is season 1. `n` is the catalog key (see seasons.js).
+    season = isMultiSeason(show) ? parseSeason(title) || 1 : show.season || 1;
+    n = encode(show, season, episode);
+  } else {
+    const key = matchName(title, names);
+    if (key === null) return null;
+    ({ season, episode } = decode(show, key));
+    n = key;
+    by = 'name';
+  }
   return {
     n,
     season,
     episode,
+    by,
     src: {
       v: video.videoId,
       c: channel.key,
