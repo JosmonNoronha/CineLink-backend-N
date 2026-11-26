@@ -269,6 +269,6 @@ describe('a normal show through the same code', () => {
   });
 
   test('every configured show is listed by listShows', () => {
-    expect(listShows().map((s) => s.tmdbId)).toEqual(expect.arrayContaining([8630, 292203, 275204, 282836]));
+    expect(listShows().map((s) => s.tmdbId)).toEqual(expect.arrayContaining([8630, 292203, 275204, 282836, 2328]));
   });
 });

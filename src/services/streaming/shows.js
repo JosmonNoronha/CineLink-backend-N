@@ -31,7 +31,12 @@ const SHOWS = {
         id: 'UCnSFZ-olBoLGLRUS_3RI2Aw',
         label: 'Taarak Mehta Ka Ooltah Chashmah',
         priority: 1,
-        playlists: ['PLPbh-P_C0BzSKo8X_EiY0WewaBlNt49g3', 'PLPbh-P_C0BzSxhJ6UCi6tgujD-FsAy0sw', 'PLPbh-P_C0BzS9YiVFrRQTqXbL_0GHMwUH', 'PLFFykHUPUGbw'],
+        playlists: [
+          'PLPbh-P_C0BzSKo8X_EiY0WewaBlNt49g3',
+          'PLPbh-P_C0BzSxhJ6UCi6tgujD-FsAy0sw',
+          'PLPbh-P_C0BzS9YiVFrRQTqXbL_0GHMwUH',
+          'PLFFykHUPUGbw',
+        ],
       },
       {
         key: 'episodes',
@@ -84,41 +89,87 @@ const SHOWS = {
       },
     ],
   },
-     275204: {
-     tmdbId: 275204,
-     season: 1,
-     title: 'Dhindora',
-     match: /dhindora/i,
-     nameMatch: true,
-     maxEpisode: 20, // season 1 has 8 episodes; this only keeps stray numbers out
-     minSeconds: 600, // full episodes run 20+ minutes
-     channels: [
-       {
-         key: 'bbkivines',
-         id: 'UCqwUrj10mAEsqezcItqvwEw',
-         label: 'BB Ki Vines',
-         priority: 1,
-       },
-     ],
-   },
-      282836: {
-     tmdbId: 282836,
-     season: 1,
-     title: 'Ekaki',
-     match: /ekaki/i,
-     episodeWords: ['chapter'], // titles say "Chapter 5: The Conqueror", not "Episode 5"
-     nameMatch: true, // and the finale may carry only its name
-     maxEpisode: 10,
-     minSeconds: 900, // reactions and clips are shorter
-     channels: [
-       {
-         key: 'acv',
-         id: 'UC7eHZXheF8nVOfwB2PEslMw',
-         label: 'Ashish Chanchlani Vines',
-         priority: 1,
-       },
-     ],
-   },
+  275204: {
+    tmdbId: 275204,
+    season: 1,
+    title: 'Dhindora',
+    match: /dhindora/i,
+    nameMatch: true,
+    maxEpisode: 20, // season 1 has 8 episodes; this only keeps stray numbers out
+    minSeconds: 600, // full episodes run 20+ minutes
+    channels: [
+      {
+        key: 'bbkivines',
+        id: 'UCqwUrj10mAEsqezcItqvwEw',
+        label: 'BB Ki Vines',
+        priority: 1,
+      },
+    ],
+  },
+  282836: {
+    tmdbId: 282836,
+    season: 1,
+    title: 'Ekaki',
+    match: /ekaki/i,
+    episodeWords: ['chapter'], // titles say "Chapter 5: The Conqueror", not "Episode 5"
+    nameMatch: true, // and the finale may carry only its name
+    maxEpisode: 10,
+    minSeconds: 900, // reactions and clips are shorter
+    channels: [
+      {
+        key: 'acv',
+        id: 'UC7eHZXheF8nVOfwB2PEslMw',
+        label: 'Ashish Chanchlani Vines',
+        priority: 1,
+      },
+    ],
+  },
+  2328: {
+    tmdbId: 2328,
+    season: 1,
+    seasonInTitle: true, // titles say "... | S13 | E01 | ..."; the season is read from the title
+    seasonRequired: true, // a title with no season and no alias below is skipped, never guessed as season 1
+    // Titles that name the series but give no season ("Ranger Green | E06 | ... | Power Rangers RPM").
+    // Season numbers are TMDB's numbering for this show. First match wins, so "Super ..." comes first.
+    // Series that span two seasons (Mighty Morphin, Beast Morphers, Dino Fury) can't be told apart by name.
+    seasonAliases: [
+      { match: /\bzeo\b/i, season: 4 },
+      { match: /\bturbo\b/i, season: 5 },
+      { match: /\bin space\b/i, season: 6 },
+      { match: /\blost galaxy\b/i, season: 7 },
+      { match: /\blightspeed rescue\b/i, season: 8 },
+      { match: /\btime force\b/i, season: 9 },
+      { match: /\bwild force\b/i, season: 10 },
+      { match: /\bninja storm\b/i, season: 11 },
+      { match: /\bdino thunder\b/i, season: 12 },
+      { match: /\bSPD\b/, season: 13 },
+      { match: /\bmystic force\b/i, season: 14 },
+      { match: /\boperation overdrive\b/i, season: 15 },
+      { match: /\bjungle fury\b/i, season: 16 },
+      { match: /\bRPM\b/, season: 17 },
+      { match: /\bsuper samurai\b/i, season: 19 },
+      { match: /\bsamurai\b/i, season: 18 },
+      { match: /\bsuper megaforce\b/i, season: 21 },
+      { match: /\bmegaforce\b/i, season: 20 },
+      { match: /\bdino super charge\b/i, season: 23 },
+      { match: /\bdino charge\b/i, season: 22 },
+      { match: /\bsuper ninja steel\b/i, season: 25 },
+      { match: /\bninja steel\b/i, season: 24 },
+      { match: /\bcosmic fury\b/i, season: 30 },
+    ],
+    title: 'Power Rangers',
+    match: /full\s+episode/i, // the channel also uploads clips, trailers and compilations
+    maxEpisode: 100, // the longest season has about 60 episodes; must stay below 1000 for seasonInTitle shows
+    minSeconds: 900, // full episodes run 20-30 minutes
+    channels: [
+      {
+        key: 'official',
+        id: 'UCpgxmlXoDtkYzRQ4cJgCT5A',
+        label: 'Power Rangers Official',
+        priority: 1,
+      },
+    ],
+  },
 };
 
 const getShow = (tmdbId) => SHOWS[Number(tmdbId)] || null;

@@ -43,6 +43,20 @@ function parseSeason(title) {
   return n && n <= 50 ? n : null;
 }
 
+/**
+ * Season of a title for a multi-season show: the title's own "S02" / "Season 2" wins, then the first
+ * `seasonAliases` entry ({ match: /\bRPM\b/i, season: 17 }) that fits, then season 1.
+ * With `seasonRequired: true` an unknown season is skipped instead of guessed as season 1.
+ */
+function seasonFor(title, show) {
+  const parsed = parseSeason(title);
+  if (parsed) return parsed;
+  for (const alias of show.seasonAliases || []) {
+    if (alias.match.test(title)) return alias.season;
+  }
+  return show.seasonRequired ? null : 1;
+}
+
 /** Compact region rule from the YouTube API: {a:[..allowed]} or {b:[..blocked]} or null. */
 function compactRegion(regionRestriction) {
   if (!regionRestriction) return null;
@@ -96,7 +110,8 @@ function toSource(video, show, channel, names) {
   if (episode) {
     if (episode > show.maxEpisode) return null;
     // Multi-season shows: a title without a season is season 1. `n` is the catalog key (see seasons.js).
-    season = isMultiSeason(show) ? parseSeason(title) || 1 : show.season || 1;
+    season = isMultiSeason(show) ? seasonFor(title, show) : show.season || 1;
+    if (!season) return null;
     n = encode(show, season, episode);
   } else {
     const key = matchName(title, names);
@@ -145,6 +160,7 @@ module.exports = {
   titleLooksLikeEpisode,
   parseEpisodeNumber,
   parseSeason,
+  seasonFor,
   parseDuration,
   compactRegion,
   playableIn,
