@@ -404,6 +404,29 @@ async function mutateGamification(uid, mutator) {
   return result;
 }
 
+function applyWatchReward(state, id) {
+  state.watchedMovieIds = [...state.watchedMovieIds, id];
+  state.totalWatched += 1;
+
+  const today = getTodayUTC();
+  const weekKey = getWeekKeyUTC();
+  state.dailyWatchCounts = {
+    ...state.dailyWatchCounts,
+    [today]: (state.dailyWatchCounts[today] || 0) + 1,
+  };
+  state.weeklyWatchCounts = {
+    ...state.weeklyWatchCounts,
+    [weekKey]: (state.weeklyWatchCounts[weekKey] || 0) + 1,
+  };
+
+  Object.assign(state, updateStreak(state));
+
+  const streakBonus = state.currentStreak > 1 ? (state.currentStreak - 1) * XP_STREAK_BONUS : 0;
+  const xpGained = XP_PER_WATCH + streakBonus;
+  state.xp += xpGained;
+  return { xpGained };
+}
+
 async function recordWatch(uid, movieId, listName) {
   const options = arguments[3] || {};
   const normalizedMovieId = String(movieId || '').trim();
@@ -445,26 +468,7 @@ async function recordWatch(uid, movieId, listName) {
         };
       }
 
-      state.watchedMovieIds = [...state.watchedMovieIds, normalizedMovieId];
-      state.totalWatched += 1;
-
-      const today = getTodayUTC();
-      const weekKey = getWeekKeyUTC();
-      state.dailyWatchCounts = {
-        ...state.dailyWatchCounts,
-        [today]: (state.dailyWatchCounts[today] || 0) + 1,
-      };
-      state.weeklyWatchCounts = {
-        ...state.weeklyWatchCounts,
-        [weekKey]: (state.weeklyWatchCounts[weekKey] || 0) + 1,
-      };
-
-      const streakState = updateStreak(state);
-      Object.assign(state, streakState);
-
-      const streakBonus = state.currentStreak > 1 ? (state.currentStreak - 1) * XP_STREAK_BONUS : 0;
-      const xpGained = XP_PER_WATCH + streakBonus;
-      state.xp += xpGained;
+      const { xpGained } = applyWatchReward(state, normalizedMovieId);
 
       const newAchievements = evaluateAchievements(state);
 
@@ -477,6 +481,38 @@ async function recordWatch(uid, movieId, listName) {
       };
     },
     { actionType: 'watch', idempotencyKey: options.idempotencyKey }
+  );
+}
+
+/**
+ * Award XP for a title marked watched, with or without a watchlist.
+ * Eligibility is checked against the title's own watched record instead of a list.
+ * Each title pays out once (watchedMovieIds), so un-marking and re-marking cannot farm XP.
+ */
+async function recordWatchTitle(uid, contentId) {
+  const options = arguments[2] || {};
+  const id = String(contentId || '').trim();
+  if (!id) throw new AppError('contentId is required', 400, 'VALIDATION_ERROR');
+
+  return mutateGamification(
+    uid,
+    async (state, ctx) => {
+      const snap = await ctx.tx.get(
+        getFirestore().collection('users').doc(uid).collection('watched').doc(id)
+      );
+      if (!snap.exists || !snap.data().watched) {
+        throw new AppError('Title must be marked watched before awarding XP', 409, 'WATCH_NOT_ELIGIBLE');
+      }
+      // The watchlist flow stores some titles as "tmdb:123"; treat that as the same title.
+      const alt = /^tmdb:(?:movie|tv):(\d+)$/.exec(id);
+      if (state.watchedMovieIds.includes(id) || (alt && state.watchedMovieIds.includes(`tmdb:${alt[1]}`))) {
+        return { state, xpGained: 0, canEarnXp: false, alreadyRewarded: true, newAchievements: [] };
+      }
+      const { xpGained } = applyWatchReward(state, id);
+      const newAchievements = evaluateAchievements(state);
+      return { state, xpGained, canEarnXp: true, alreadyRewarded: false, newAchievements };
+    },
+    { actionType: 'watch-title', idempotencyKey: options.idempotencyKey }
   );
 }
 
@@ -724,6 +760,7 @@ module.exports = {
   defaultState,
   getLevelInfo,
   recordWatch,
+  recordWatchTitle,
   recordListCreated,
   recordListCompleted,
   recomputeStateFromWatchlists,

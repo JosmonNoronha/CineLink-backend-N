@@ -14,6 +14,7 @@ const favoritesService = require('../services/user/favorites');
 const watchlistsService = require('../services/user/watchlists');
 const episodesService = require('../services/user/episodes');
 const gamificationService = require('../services/user/gamification');
+const watchedTitlesService = require('../services/user/watchedTitles');
 
 const router = Router();
 
@@ -25,6 +26,35 @@ function requireIdempotencyKey(req) {
   }
   return normalized;
 }
+
+// Best-effort XP for a title that is now watched. A failure here must never fail the watch itself.
+async function awardTitleXp(uid, contentId, req) {
+  try {
+    const key = gamificationService.sanitizeIdempotencyKey(req.headers['x-idempotency-key']);
+    return await gamificationService.recordWatchTitle(uid, contentId, { idempotencyKey: key });
+  } catch (err) {
+    logger.warn('Title XP award skipped', { contentId, message: err.message });
+    return null;
+  }
+}
+
+// Keep the per-title watched record in step with a watchlist toggle. Never fails the toggle.
+async function mirrorToTitleRecord(uid, listName, ident, watched) {
+  try {
+    await watchedTitlesService.mirrorListToggle(uid, listName, ident, watched);
+  } catch (err) {
+    logger.warn('Watched record mirror skipped', { listName, message: err.message });
+  }
+}
+
+const titleMetaSchema = Joi.object({
+  title: Joi.string().trim().max(200).allow(''),
+  poster: Joi.string().trim().max(500).allow(''),
+  year: Joi.string().trim().max(12).allow(''),
+  totalEpisodes: Joi.number().integer().min(0).max(100000),
+  totalSeasons: Joi.number().integer().min(0).max(1000),
+  seasonCounts: Joi.object().pattern(/^\d{1,3}$/, Joi.number().integer().min(0).max(100000)).max(200),
+}).unknown(false);
 
 function logLegacyWatchlistRoute(req, _res, next) {
   logger.warn('Legacy watchlist route used; prefer /watchlists/:name/items', {
@@ -174,6 +204,7 @@ router.patch(
       req.params.name,
       req.params.imdbID
     );
+    await mirrorToTitleRecord(req.user.uid, req.params.name, req.params.imdbID, data.watched);
     return ok(res, data);
   }
 );
@@ -267,6 +298,7 @@ router.patch(
   }),
   async (req, res) => {
     const data = await watchlistsService.toggleWatched(req.user.uid, req.params.name, req.params.tmdb_id);
+    await mirrorToTitleRecord(req.user.uid, req.params.name, req.params.tmdb_id, data.watched);
     return ok(res, data);
   }
 );
@@ -342,6 +374,12 @@ router.put(
   }
 );
 
+// Everything the user has watched (movies, finished series, series in progress).
+router.get('/watched', async (req, res) => {
+  const data = await watchedTitlesService.listWatchedTitles(req.user.uid);
+  return ok(res, data);
+});
+
 router.get(
   '/watched/:contentId',
   validate({
@@ -361,17 +399,71 @@ router.patch(
       season: Joi.number().integer().min(0).required(),
       episode: Joi.number().integer().min(1).required(),
       watched: Joi.boolean().required(),
+      meta: titleMetaSchema.optional(),
     }),
   }),
   async (req, res) => {
+    const { uid } = req.user;
+    const { contentId } = req.params;
     const data = await episodesService.setEpisodeWatched(
-      req.user.uid,
-      req.params.contentId,
+      uid,
+      contentId,
       req.body.season,
       req.body.episode,
       req.body.watched
     );
-    return ok(res, { episodes: data });
+    // Remember title info, and notice when the last episode completes the series.
+    let title = null;
+    try {
+      title = await watchedTitlesService.afterEpisodeChange(uid, contentId, {
+        watched: req.body.watched,
+        meta: req.body.meta,
+      });
+    } catch (err) {
+      logger.warn('Episode follow-up skipped', { contentId, message: err.message });
+    }
+    const xp = title && title.justCompleted ? await awardTitleXp(uid, contentId, req) : null;
+    return ok(res, { episodes: data, title: title && title.summary, completed: !!(title && title.completed), xp });
+  }
+);
+
+// Is this title watched? (movie: flag. series: flag or every episode ticked.)
+router.get(
+  '/watched/:contentId/title',
+  validate({ params: Joi.object({ contentId: Joi.string().trim().min(1).max(120).required() }) }),
+  async (req, res) => {
+    const data = await watchedTitlesService.getTitleState(req.user.uid, req.params.contentId);
+    return ok(res, data);
+  }
+);
+
+// Mark a whole movie or series watched / unwatched, with or without a watchlist.
+router.put(
+  '/watched/:contentId/title',
+  validate({
+    params: Joi.object({ contentId: Joi.string().trim().min(1).max(120).required() }),
+    body: Joi.object({
+      type: Joi.string().valid('movie', 'series', 'tv').required(),
+      watched: Joi.boolean().required(),
+      meta: titleMetaSchema.optional(),
+      // Series only: every episode to tick when marking the whole series watched.
+      episodes: Joi.array()
+        .items(
+          Joi.object({
+            season: Joi.number().integer().min(0).required(),
+            episode: Joi.number().integer().min(1).required(),
+          })
+        )
+        .max(watchedTitlesService.MAX_BULK_EPISODES)
+        .optional(),
+    }),
+  }),
+  async (req, res) => {
+    const { uid } = req.user;
+    const { contentId } = req.params;
+    const data = await watchedTitlesService.setTitleWatched(uid, contentId, req.body);
+    const xp = req.body.watched ? await awardTitleXp(uid, contentId, req) : null;
+    return ok(res, { ...data, xp });
   }
 );
 
