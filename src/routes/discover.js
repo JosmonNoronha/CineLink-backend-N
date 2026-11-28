@@ -5,6 +5,7 @@ const { validate } = require('../middleware/validator');
 const { authMiddleware } = require('../middleware/auth');
 const { batchDetailsLimiter } = require('../middleware/rateLimiter');
 const discover = require('../services/tmdb/discover');
+const { getUpcomingTimeline } = require('../services/tmdb/upcomingTimeline');
 
 const router = Router();
 
@@ -41,6 +42,21 @@ router.post(
     }),
   }),
   async (req, res) => ok(res, await discover.getMyShowsCalendar(req.body))
+);
+
+// GET /discover/upcoming/timeline?region=IN   (movies + series, one list sorted by date)
+router.get(
+  '/upcoming/timeline',
+  validate({
+    query: Joi.object({
+      region: Joi.string().trim().uppercase().pattern(/^[A-Z]{2}$/).default('US'),
+    }),
+  }),
+  async (req, res) => {
+    const data = await getUpcomingTimeline({ region: req.query.region });
+    res.set('Cache-Control', 'public, max-age=300');
+    return ok(res, data);
+  }
 );
 
 // GET /discover/in-theaters?region=IN&type=movie&page=1
