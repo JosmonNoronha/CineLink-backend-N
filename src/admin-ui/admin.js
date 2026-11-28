@@ -324,7 +324,8 @@
     $('view-audit').classList.toggle('hidden', name !== 'audit');
     $('view-overview').classList.toggle('hidden', name !== 'overview');
     $('view-links').classList.toggle('hidden', name !== 'links');
-    if (name === 'audit') loadAudit(); else if (name === 'overview') loadOverview(); else if (name === 'links') loadLinks(); else loadQueue();
+    $('view-picks').classList.toggle('hidden', name !== 'picks');
+    if (name === 'audit') loadAudit(); else if (name === 'overview') loadOverview(); else if (name === 'links') loadLinks(); else if (name === 'picks') { if (window.CineLinkPicks) window.CineLinkPicks.load(); } else loadQueue();
   }
 
   function handleError(e) {
@@ -377,5 +378,6 @@
     }
     $('login').classList.remove('hidden');
   }
+  window.__admin = { call, el, clear, toast, handleError, posterUrl };
   boot();
 })();

@@ -6,6 +6,7 @@
   <meta name="robots" content="noindex, nofollow">
   <title>CineLink Moderation</title>
   <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="picks.css">
 </head>
 <body>
   <main id="login" class="login hidden">
@@ -26,6 +27,7 @@
         <button class="tab active" data-tab="queue" role="tab">Queue <span id="queue-count" class="badge"></span></button>
         <button class="tab" data-tab="overview" role="tab">Overview</button>
         <button class="tab" data-tab="links" role="tab">Links <span id="links-badge" class="badge warn"></span></button>
+        <button class="tab" data-tab="picks" role="tab">Author's choice</button>
         <button class="tab" data-tab="audit" role="tab">Audit log</button>
       </nav>
       <span class="spacer"></span>
@@ -57,6 +59,11 @@
       <div id="links-body"></div>
     </section>
 
+    <section id="view-picks" class="picks hidden">
+      <div class="overview-head"><h2>Author's choice</h2><button id="picks-refresh" class="btn small">Refresh</button></div>
+      <div id="picks-body"></div>
+    </section>
+
     <section id="view-audit" class="audit hidden">
       <div id="audit-body"></div>
     </section>
@@ -64,5 +71,6 @@
 
   <div id="toast" class="toast hidden" role="status"></div>
   <script src="admin.js"></script>
+  <script src="picks.js"></script>
 </body>
 </html>
